@@ -1,0 +1,14 @@
+# Canvas Browser - Base Dependencies Image
+FROM electronuserland/builder:18
+
+WORKDIR /app
+
+# Install System Dependencies (ImageMagick for icon generation)
+RUN apt-get update && apt-get install -y imagemagick && rm -rf /var/lib/apt/lists/*
+
+# Install Node Dependencies
+# Install Node Dependencies
+COPY package.json ./
+
+# Use npm install (generates lockfile if missing)
+RUN npm install

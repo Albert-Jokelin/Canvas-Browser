@@ -1,0 +1,196 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #ffffff;
+    color: #202124;
+}
+
+body.dark {
+    background: #1a1a1a;
+    color: #e8eaed;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Title bar drag region */
+.drag-region {
+    -webkit-app-region: drag;
+}
+
+.no-drag {
+    -webkit-app-region: no-drag;
+}
+
+/* Chat bubbles */
+.chat-user {
+    @apply bg-google-blue text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[85%] ml-auto;
+}
+
+.chat-ai {
+    @apply bg-light-panel text-light-text rounded-2xl rounded-bl-md px-4 py-2.5 max-w-[85%];
+}
+
+.dark .chat-ai {
+    @apply bg-dark-surface text-dark-text;
+}
+
+/* Typing indicator dots */
+.typing-indicator span {
+    @apply inline-block w-2 h-2 bg-light-muted rounded-full mx-0.5;
+    animation: pulseDot 1.4s ease-in-out infinite;
+}
+
+.typing-indicator span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-indicator span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes pulseDot {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Input styles */
+.input-primary {
+    @apply w-full px-4 py-3 rounded-xl border border-light-border bg-white text-light-text;
+    @apply focus:outline-none focus:border-google-blue focus:ring-2 focus:ring-google-blue/20;
+    @apply placeholder:text-light-muted;
+}
+
+.dark .input-primary {
+    @apply border-dark-border bg-dark-surface text-dark-text;
+    @apply focus:border-google-blue focus:ring-google-blue/30;
+    @apply placeholder:text-dark-muted;
+}
+
+/* Button styles */
+.btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-150 flex items-center gap-2;
+    @apply active:scale-[0.98];
+}
+
+.btn-primary {
+    @apply btn bg-google-blue text-white hover:bg-blue-600 hover:shadow-md;
+}
+
+.btn-secondary {
+    @apply btn bg-light-panel border border-light-border text-light-text;
+    @apply hover:bg-gray-100;
+}
+
+.dark .btn-secondary {
+    @apply bg-dark-surface border-dark-border text-dark-text hover:bg-gray-800;
+}
+
+.btn-ghost {
+    @apply btn bg-transparent text-light-muted hover:bg-black/5 hover:text-light-text;
+}
+
+.dark .btn-ghost {
+    @apply hover:bg-white/5 hover:text-dark-text;
+}
+
+/* Suggestion card */
+.suggestion-card {
+    @apply p-4 rounded-xl border border-light-border bg-white transition-all duration-200;
+    @apply hover:shadow-lg hover:border-google-blue/30 hover:-translate-y-0.5 cursor-pointer;
+}
+
+.dark .suggestion-card {
+    @apply border-dark-border bg-dark-surface;
+}
+
+/* Tab item */
+.tab-item {
+    @apply px-3 py-2 rounded-lg text-sm font-medium transition-all;
+    @apply text-light-muted hover:bg-light-panel hover:text-light-text;
+}
+
+.tab-item.active {
+    @apply bg-light-panel text-light-text;
+}
+
+.dark .tab-item {
+    @apply text-dark-muted hover:bg-dark-surface hover:text-dark-text;
+}
+
+.dark .tab-item.active {
+    @apply bg-dark-surface text-dark-text;
+}
+
+/* WebView container */
+webview {
+    width: 100%;
+    height: 100%;
+}
+
+/* GenTab container */
+.gentab-container {
+    @apply w-full h-full overflow-auto p-6;
+}
+
+/* Loading progress bar */
+.progress-bar {
+    @apply h-1 bg-google-blue rounded-full;
+    animation: progress 2s ease-in-out;
+}
+
+/* Source attribution */
+.source-link {
+    @apply text-xs text-google-blue hover:underline cursor-pointer;
+}
+
+.source-indicator {
+    @apply inline-flex items-center justify-center w-4 h-4 text-[10px] bg-google-blue/10 text-google-blue rounded-full;
+}

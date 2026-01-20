@@ -1,0 +1,16 @@
+# Dockerfile.test for fast testing
+FROM node:18-bullseye
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json ./
+
+# Install dependencies (cached layer)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Run tests with CI flag (non-interactive)
+CMD ["npm", "test", "--", "--run"]
