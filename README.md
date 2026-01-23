@@ -1,120 +1,132 @@
-# Canvas-Browser
-AI Browser for macOS
-A beautiful, modern Chromium-based browser that transforms your browsing sessions into interactive, custom web applications using AI.
+# Canvas Browser
+
+A native macOS intelligent browser with AI-powered features, built with Swift 6.0 and SwiftUI.
+
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
+![Swift 5.9+](https://img.shields.io/badge/Swift-5.9%2B-orange)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ## Features
 
-- 🌐 **Split-Screen Browser** - Chat on the left, web browsing on the right
-- 🤖 **AI Chat Interface** - Natural language interaction powered by Claude
-- ✨ **GenTabs** - AI-generated interactive React applications based on your browsing context
-- 🔗 **Source Attribution** - Every generated element links back to original sources
-- 💾 **Local Persistence** - All data stored locally in SQLite
-- 🌙 **Light/Dark Mode** - Beautiful Google-style theming
+- **Split-Screen Browsing** - Web browser with integrated AI chat panel
+- **AI Chat** - Powered by Google Gemini and Anthropic Claude
+- **GenTabs** - AI-generated interactive content (card grids, maps, 3D views)
+- **Dark Mode** - Full support for macOS light and dark themes
+- **Menu Bar Access** - Quick AI access via Cmd+Shift+K
+- **Native Performance** - Built with Swift and WebKit for optimal macOS experience
 
-## Tech Stack
+## Screenshots
 
-| Component | Technology |
-|-----------|------------|
-| Browser Engine | Chromium (via Electron) |
-| UI Framework | React 18 |
-| Styling | Tailwind CSS |
-| AI | Claude API (Anthropic) |
-| Database | SQLite (better-sqlite3) |
-| Build | Vite + electron-builder |
+| Empty State | Browser with Chat | GenTabs |
+|-------------|-------------------|---------|
+| Beautiful onboarding | Split-screen layout | AI-generated content |
 
-## Prerequisites
+## Requirements
 
-- **Node.js 18+** (Required for Electron)
-- **Claude API key** from [Anthropic Console](https://console.anthropic.com)
+- macOS 14.0 (Sonoma) or later
+- Xcode 15+ (for development)
+- Swift 5.9+
 
-## Installation
+## Quick Start
+
+### Build & Run
 
 ```bash
 # Clone the repository
-git clone <repo-url>
-cd canvas-browser
+git clone https://github.com/yourusername/Canvas.git
+cd Canvas
 
-# Install dependencies
-npm install
+# Build and run (with tests)
+./bundle_and_run.sh
 
-# Run in development
-npm run electron:dev
+# Or manually
+swift test && swift build
+open CanvasBrowser.app
+```
+
+### Build Options
+
+```bash
+# Skip tests for faster iteration
+./bundle_and_run.sh --skip-tests
+
+# Build only (don't launch)
+./bundle_and_run.sh --no-launch
+
+# Release build
+./bundle_and_run.sh --release
 ```
 
 ## Configuration
 
-1. Open Canvas
-2. Go to Settings (⚙️ in title bar)
-3. Enter your Claude API key
-4. Click "Test Key" to verify
+### AI Setup
 
-## How It Works
+1. Open Canvas Browser
+2. Go to **Settings** (Cmd+,) > **AI Features**
+3. Choose your AI provider:
+   - **Google Gemini**: Get key from [AI Studio](https://aistudio.google.com/app/apikey)
+   - **Anthropic Claude**: Get key from [Console](https://console.anthropic.com/)
+4. Enter your API key and select a model
 
-### Browsing
-- Type a URL in the chat input to navigate
-- Browse normally in the right panel
-- Canvas extracts page content for AI context
+## Architecture
 
-### GenTabs
-1. Browse related websites (e.g., 3-4 recipe sites)
-2. AI suggests relevant apps (e.g., "Create Meal Planner")
-3. Click "Generate" to create an interactive app
-4. Refine via natural language: "Add calorie counts"
-
-### Example GenTab Types
-- 🗺️ **Trip Planner** - Interactive itinerary with maps
-- 🍽️ **Meal Planner** - Weekly calendar with recipes  
-- 📊 **Comparison Table** - Side-by-side product analysis
-- 📚 **Study Guide** - Flashcards and concept maps
+```
+Canvas/
+├── CanvasBrowser/          # Main app source
+│   ├── App/                # App lifecycle & state
+│   ├── Models/             # Data structures
+│   ├── Views/              # SwiftUI views
+│   ├── Services/           # AI & web services
+│   └── Persistence/        # CoreData storage
+├── Tests/                  # Unit tests
+├── Package.swift           # SPM configuration
+└── bundle_and_run.sh       # Build script
+```
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl + L` | Focus chat input |
-| `Cmd/Ctrl + T` | New tab |
-| `Cmd/Ctrl + W` | Close tab |
-| `Cmd/Ctrl + ,` | Settings |
+| Action | Shortcut |
+|--------|----------|
+| New Tab | Cmd+T |
+| Close Tab | Cmd+W |
+| Toggle AI Menu | Cmd+Shift+K |
+| Reload Page | Cmd+R |
+| Settings | Cmd+, |
 
-## Project Structure
+## Development
 
-```
-canvas-browser/
-├── src/
-│   ├── main/                    # Electron main process
-│   │   ├── index.js             # Window, IPC, session
-│   │   └── database.js          # SQLite schema
-│   ├── renderer/                # React UI
-│   │   ├── App.jsx              # Main layout
-│   │   ├── components/
-│   │   │   ├── TitleBar.jsx     # Window controls
-│   │   │   ├── ChatPanel.jsx    # Left: chat + suggestions
-│   │   │   ├── RightPanel.jsx   # Container for views
-│   │   │   ├── TabBar.jsx       # Tab management
-│   │   │   ├── BrowserView.jsx  # WebView wrapper
-│   │   │   ├── GenTabView.jsx   # Dynamic component renderer
-│   │   │   ├── GenTabLibrary.jsx
-│   │   │   └── SettingsPanel.jsx
-│   │   ├── context/
-│   │   │   └── AppContext.jsx   # Global state
-│   │   └── services/
-│   │       └── claude.js        # AI API client
-│   └── preload/
-│       └── index.js             # IPC bridge
-├── assets/icons/
-├── package.json
-├── vite.config.js
-└── tailwind.config.js
-```
-
-## Building for Production
+### Running Tests
 
 ```bash
-npm run build
+swift test
 ```
 
-Outputs to `release/` directory.
+### Project Structure
+
+See [claude.md](claude.md) for detailed architecture documentation and coding standards.
+
+### CI/CD
+
+The project includes GitHub Actions workflows for:
+- Automated testing on pull requests
+- Release builds on main branch pushes
+- DMG artifact generation
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Run tests (`swift test`)
+4. Commit your changes
+5. Push to the branch
+6. Open a Pull Request
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- Built with [Swift](https://swift.org) and [SwiftUI](https://developer.apple.com/xcode/swiftui/)
+- AI powered by [Google Gemini](https://ai.google.dev/) and [Anthropic Claude](https://anthropic.com)
+- WebKit for browser rendering
