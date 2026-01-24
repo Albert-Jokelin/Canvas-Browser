@@ -12,7 +12,7 @@ struct ChatPanelView: View {
     @StateObject private var geminiService = GeminiService()
 
     @AppStorage("geminiApiKey") var apiKey = ""
-    @AppStorage("aiModel") var aiModel = "gemini-1.5-flash"
+    @AppStorage("aiModel") var aiModel = "gemini-2.0-flash"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -225,26 +225,33 @@ struct MessageBubble: View {
                 Spacer()
             }
 
-            Text(message.content)
-                .font(.system(size: 14))
-                .padding(CanvasSpacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: CanvasRadius.large)
-                        .fill(message.role == .user
-                            ? LinearGradient(
-                                colors: [.canvasBlue.opacity(0.15), .canvasTeal.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            : LinearGradient(
-                                colors: [Color.canvasTertiaryBackground, Color.canvasTertiaryBackground],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+            Group {
+                if message.role == .assistant {
+                    // Use markdown rendering for AI responses
+                    MarkdownText(message.content, fontSize: 14)
+                } else {
+                    // Plain text for user messages
+                    Text(message.content)
+                        .font(.system(size: 14))
+                }
+            }
+            .padding(CanvasSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: CanvasRadius.large)
+                    .fill(message.role == .user
+                        ? LinearGradient(
+                            colors: [.canvasBlue.opacity(0.15), .canvasTeal.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
-                )
-                .foregroundColor(.canvasLabel)
-                .textSelection(.enabled)
+                        : LinearGradient(
+                            colors: [Color.canvasTertiaryBackground, Color.canvasTertiaryBackground],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .foregroundColor(.canvasLabel)
 
             if message.role == .user {
                 // User Avatar

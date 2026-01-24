@@ -41,6 +41,19 @@ struct SidebarRail: View {
                     }
                 }
                 .onHover { hoveredButton = $0 ? "chat" : nil }
+
+                RailButton(
+                    icon: "folder.fill",
+                    label: "Tab Groups",
+                    isHovered: hoveredButton == "groups",
+                    accentColor: .purple,
+                    isActive: appState.showTabGroupsSidebar
+                ) {
+                    withAnimation(.spring(response: 0.3)) {
+                        appState.showTabGroupsSidebar.toggle()
+                    }
+                }
+                .onHover { hoveredButton = $0 ? "groups" : nil }
             }
             .padding(.top, CanvasSpacing.lg)
 

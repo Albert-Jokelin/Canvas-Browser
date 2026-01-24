@@ -257,6 +257,15 @@ class ShortcutManager: ObservableObject {
     static let newGenTabNotification = Notification.Name("CanvasNewGenTab")
     static let printNotification = Notification.Name("CanvasPrint")
 
+    // New notifications for bookmarks, reading list, and help
+    static let addToReadingListNotification = Notification.Name("CanvasAddToReadingList")
+    static let showBookmarksNotification = Notification.Name("CanvasShowBookmarks")
+    static let showReadingListNotification = Notification.Name("CanvasShowReadingList")
+    static let newPrivateTabNotification = Notification.Name("CanvasNewPrivateTab")
+    static let showHelpNotification = Notification.Name("CanvasShowHelp")
+    static let showKeyboardShortcutsNotification = Notification.Name("CanvasShowKeyboardShortcuts")
+    static let viewSourceNotification = Notification.Name("CanvasViewSource")
+
     private init() {
         setupGlobalShortcuts()
     }
@@ -459,10 +468,21 @@ struct CanvasCommands: Commands {
             }
             .keyboardShortcut(CanvasShortcut.addBookmark.key, modifiers: CanvasShortcut.addBookmark.modifiers)
 
+            Button("Add to Reading List") {
+                NotificationCenter.default.post(name: ShortcutManager.addToReadingListNotification, object: nil)
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+
+            Divider()
+
             Button(CanvasShortcut.showBookmarks.displayName) {
-                // Show bookmarks panel
+                NotificationCenter.default.post(name: ShortcutManager.showBookmarksNotification, object: nil)
             }
             .keyboardShortcut(CanvasShortcut.showBookmarks.key, modifiers: CanvasShortcut.showBookmarks.modifiers)
+
+            Button("Show Reading List") {
+                NotificationCenter.default.post(name: ShortcutManager.showReadingListNotification, object: nil)
+            }
 
             Divider()
 
@@ -507,14 +527,47 @@ struct CanvasCommands: Commands {
             .keyboardShortcut(CanvasShortcut.openInspector.key, modifiers: CanvasShortcut.openInspector.modifiers)
 
             Button(CanvasShortcut.viewSource.displayName) {
-                // View page source
+                NotificationCenter.default.post(name: ShortcutManager.viewSourceNotification, object: nil)
             }
             .keyboardShortcut(CanvasShortcut.viewSource.key, modifiers: CanvasShortcut.viewSource.modifiers)
 
             Button(CanvasShortcut.showJavaScriptConsole.displayName) {
-                // Show JS console
+                NotificationCenter.default.post(name: ShortcutManager.openInspectorNotification, object: nil)
             }
             .keyboardShortcut(CanvasShortcut.showJavaScriptConsole.key, modifiers: CanvasShortcut.showJavaScriptConsole.modifiers)
+
+            Divider()
+
+            Button("New Private Tab") {
+                NotificationCenter.default.post(name: ShortcutManager.newPrivateTabNotification, object: nil)
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+        }
+
+        // Help menu
+        CommandMenu("Help") {
+            Button("Canvas Browser Help") {
+                NotificationCenter.default.post(name: ShortcutManager.showHelpNotification, object: nil)
+            }
+            .keyboardShortcut("?", modifiers: .command)
+
+            Button("Keyboard Shortcuts") {
+                NotificationCenter.default.post(name: ShortcutManager.showKeyboardShortcutsNotification, object: nil)
+            }
+
+            Divider()
+
+            Button("Report an Issue...") {
+                if let url = URL(string: "https://github.com/anthropics/claude-code/issues") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+
+            Divider()
+
+            Button("About Canvas Browser") {
+                NSApp.orderFrontStandardAboutPanel(nil)
+            }
         }
     }
 }

@@ -49,15 +49,28 @@ class WebViewCoordinator: NSObject, ObservableObject {
     private var observations: [NSKeyValueObservation] = []
     private var originalURL: URL?
 
+    /// Whether this coordinator is in private browsing mode
+    @Published var isPrivateBrowsing: Bool = false
+
     // MARK: - Initialization
 
     override init() {
         super.init()
-        setupWebView()
+        setupWebView(isPrivate: false)
         setupObservers()
     }
 
-    private func setupWebView() {
+    /// Initialize with private browsing mode
+    convenience init(isPrivate: Bool) {
+        self.init()
+        if isPrivate {
+            self.isPrivateBrowsing = true
+            setupWebView(isPrivate: true)
+            setupObservers()
+        }
+    }
+
+    private func setupWebView(isPrivate: Bool = false) {
         let config = WKWebViewConfiguration()
 
         // Enable all Safari features
@@ -72,8 +85,10 @@ class WebViewCoordinator: NSObject, ObservableObject {
         // Web preferences
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
-        // Process pool for session isolation
-        config.processPool = WKProcessPool()
+        // Private browsing: use non-persistent data store
+        if isPrivate {
+            config.websiteDataStore = .nonPersistent()
+        }
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.allowsBackForwardNavigationGestures = true
@@ -740,9 +755,45 @@ extension WebViewCoordinator: WKUIDelegate {
     }
 }
 
+// MARK: - Context Menu Actions
+
+extension WebViewCoordinator {
+    func openInNewTab(_ url: URL) {
+        NotificationCenter.default.post(
+            name: .createNewTabWithURL,
+            object: nil,
+            userInfo: ["url": url]
+        )
+    }
+
+    func openInPrivateTab(_ url: URL) {
+        NotificationCenter.default.post(
+            name: .createPrivateTabWithURL,
+            object: nil,
+            userInfo: ["url": url]
+        )
+    }
+
+    func copyLinkToClipboard(_ url: URL) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+    }
+
+    func addCurrentToReadingList(_ url: URL) {
+        let title = pageTitle.isEmpty ? url.host ?? "Untitled" : pageTitle
+        ReadingListManager.shared.addItem(url: url.absoluteString, title: title)
+    }
+
+    func addCurrentToBookmarks(_ url: URL) {
+        let title = pageTitle.isEmpty ? url.host ?? "Untitled" : pageTitle
+        BookmarkManager.shared.addBookmark(url: url.absoluteString, title: title)
+    }
+}
+
 // MARK: - Notification Names
 
 extension Notification.Name {
     static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
+    static let createPrivateTabWithURL = Notification.Name("createPrivateTabWithURL")
     static let startDownload = Notification.Name("startDownload")
 }

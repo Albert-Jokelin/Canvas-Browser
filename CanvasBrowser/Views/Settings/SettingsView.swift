@@ -85,7 +85,7 @@ struct BrowserSettingsView: View {
 
 struct AISettingsView: View {
     @AppStorage("aiProvider") var aiProvider = "gemini"
-    @AppStorage("aiModel") var aiModel = "gemini-1.5-flash"
+    @AppStorage("aiModel") var aiModel = "gemini-2.0-flash"
     @AppStorage("geminiApiKey") var geminiApiKey = ""
     @AppStorage("claudeApiKey") var claudeApiKey = ""
     @AppStorage("claudeModel") var claudeModel = "claude-sonnet-4-20250514"
