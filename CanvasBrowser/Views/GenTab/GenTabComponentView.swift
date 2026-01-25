@@ -243,7 +243,11 @@ struct CardComponentView: View {
             if let actionTitle = card.metadata?["actionTitle"] {
                 Button(action: {
                     if let sourceURL = card.sourceURL, let url = URL(string: sourceURL) {
-                        NSWorkspace.shared.open(url)
+                        NotificationCenter.default.post(
+                            name: .createNewTabWithURL,
+                            object: nil,
+                            userInfo: ["url": url]
+                        )
                     }
                 }) {
                     HStack {
@@ -414,7 +418,11 @@ struct LinkComponentView: View {
     var body: some View {
         Button(action: {
             if url != "#", let linkURL = URL(string: url) {
-                NSWorkspace.shared.open(linkURL)
+                NotificationCenter.default.post(
+                    name: .createNewTabWithURL,
+                    object: nil,
+                    userInfo: ["url": linkURL]
+                )
             }
         }) {
             HStack {

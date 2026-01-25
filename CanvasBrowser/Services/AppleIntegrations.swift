@@ -166,6 +166,78 @@ class RemindersManager: ObservableObject {
             return false
         }
     }
+
+    func getOrCreateList(named listName: String) -> EKCalendar? {
+        guard hasAccess else { return nil }
+
+        // Find existing list
+        if let existingList = lists.first(where: { $0.title == listName }) {
+            return existingList
+        }
+
+        // Create new list
+        let newList = EKCalendar(for: .reminder, eventStore: eventStore)
+        newList.title = listName
+        newList.source = eventStore.defaultCalendarForNewReminders()?.source
+
+        do {
+            try eventStore.saveCalendar(newList, commit: true)
+            loadLists()
+            return newList
+        } catch {
+            print("Failed to create reminder list: \(error)")
+            return nil
+        }
+    }
+
+    func createRemindersFromGenTab(_ genTab: GenTab) {
+        guard hasAccess else { return }
+
+        let listName = "Canvas: \(genTab.title)"
+        guard let list = getOrCreateList(named: listName) else { return }
+
+        // Extract actionable items from GenTab components
+        for component in genTab.components {
+            switch component {
+            case .bulletList(let items):
+                for item in items {
+                    createReminderInList(title: item, list: list)
+                }
+            case .numberedList(let items):
+                for (index, item) in items.enumerated() {
+                    createReminderInList(title: "\(index + 1). \(item)", list: list)
+                }
+            case .cardGrid(let cards):
+                for card in cards {
+                    if let actionTitle = card.metadata?["actionTitle"], actionTitle != "View" {
+                        createReminderInList(title: "\(card.title) - \(actionTitle)", list: list, notes: card.description)
+                    }
+                }
+            default:
+                break
+            }
+        }
+
+        fetchReminders(completed: false)
+    }
+
+    private func createReminderInList(title: String, list: EKCalendar, notes: String? = nil, dueDate: Date? = nil) {
+        let reminder = EKReminder(eventStore: eventStore)
+        reminder.title = title
+        reminder.notes = notes
+        reminder.calendar = list
+
+        if let dueDate = dueDate {
+            let calendar = Calendar.current
+            reminder.dueDateComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
+        }
+
+        do {
+            try eventStore.save(reminder, commit: true)
+        } catch {
+            print("Failed to create reminder: \(error)")
+        }
+    }
 }
 
 // MARK: - Contacts Integration
@@ -299,19 +371,58 @@ class MapsManager {
 
 // MARK: - Notes Integration
 
-class NotesManager {
+class NotesManager: ObservableObject {
     static let shared = NotesManager()
 
-    private init() {}
+    @Published var folders: [String] = ["Notes"]
+    @Published var accounts: [String] = ["iCloud"]
 
-    func createNote(title: String, body: String) {
-        // Open Notes app with a new note
-        // Using AppleScript via NSAppleScript
+    private init() {
+        loadFolders()
+    }
+
+    func loadFolders() {
+        // Fetch available folders from Notes
+        let script = """
+        tell application "Notes"
+            set folderNames to {}
+            repeat with aFolder in folders of account "iCloud"
+                set end of folderNames to name of aFolder
+            end repeat
+            return folderNames
+        end tell
+        """
+
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            if let result = appleScript.executeAndReturnError(&error).coerce(toDescriptorType: typeAEList) {
+                var fetchedFolders: [String] = []
+                for i in 1...result.numberOfItems {
+                    if let item = result.atIndex(i)?.stringValue {
+                        fetchedFolders.append(item)
+                    }
+                }
+                if !fetchedFolders.isEmpty {
+                    DispatchQueue.main.async {
+                        self.folders = fetchedFolders
+                    }
+                }
+            }
+        }
+    }
+
+    func createNote(title: String, body: String, folder: String = "Notes", account: String = "iCloud") {
+        let escapedTitle = escapeForAppleScript(title)
+        let escapedBody = escapeForAppleScript(body)
+        let escapedFolder = escapeForAppleScript(folder)
+
         let script = """
         tell application "Notes"
             activate
-            tell account "iCloud"
-                make new note with properties {name:"\(escapeForAppleScript(title))", body:"\(escapeForAppleScript(body))"}
+            tell account "\(account)"
+                tell folder "\(escapedFolder)"
+                    make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                end tell
             end tell
         end tell
         """
@@ -325,6 +436,73 @@ class NotesManager {
         }
     }
 
+    func appendToNote(noteTitle: String, content: String, account: String = "iCloud") {
+        let escapedTitle = escapeForAppleScript(noteTitle)
+        let escapedContent = escapeForAppleScript(content)
+
+        let script = """
+        tell application "Notes"
+            tell account "\(account)"
+                set theNote to first note whose name is "\(escapedTitle)"
+                set body of theNote to (body of theNote) & return & return & "\(escapedContent)"
+            end tell
+        end tell
+        """
+
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            appleScript.executeAndReturnError(&error)
+            if let error = error {
+                print("AppleScript error: \(error)")
+            }
+        }
+    }
+
+    func createNoteFromGenTab(_ genTab: GenTab, folder: String = "Notes") {
+        var body = ""
+
+        for component in genTab.components {
+            body += componentToMarkdown(component) + "\n\n"
+        }
+
+        if !genTab.sourceURLs.isEmpty {
+            body += "\n---\nSources:\n"
+            for source in genTab.sourceURLs {
+                body += "- \(source.title): \(source.url)\n"
+            }
+        }
+
+        createNote(title: genTab.title, body: body, folder: folder)
+    }
+
+    private func componentToMarkdown(_ component: GenTabComponent) -> String {
+        switch component {
+        case .header(let text):
+            return "## \(text)"
+        case .paragraph(let text):
+            return text
+        case .bulletList(let items):
+            return items.map { "- \($0)" }.joined(separator: "\n")
+        case .numberedList(let items):
+            return items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        case .table(let columns, let rows):
+            var result = "| " + columns.joined(separator: " | ") + " |\n"
+            result += "| " + columns.map { _ in "---" }.joined(separator: " | ") + " |\n"
+            for row in rows {
+                result += "| " + row.joined(separator: " | ") + " |\n"
+            }
+            return result
+        case .keyValue(let pairs):
+            return pairs.map { "**\($0.key):** \($0.value)" }.joined(separator: "\n")
+        case .callout(_, let text):
+            return "> \(text)"
+        case .link(let title, let url):
+            return "[\(title)](\(url))"
+        default:
+            return ""
+        }
+    }
+
     func openNotes() {
         NSWorkspace.shared.launchApplication("Notes")
     }
@@ -333,6 +511,7 @@ class NotesManager {
         string
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 }
 

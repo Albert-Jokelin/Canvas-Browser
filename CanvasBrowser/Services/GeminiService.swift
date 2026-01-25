@@ -34,6 +34,24 @@ class GeminiService: ObservableObject {
         UserDefaults.standard.string(forKey: "aiModel") ?? "gemini-2.0-flash"
     }
 
+    /// Check if web search is enabled
+    var isWebSearchEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "enableAIWebSearch")
+    }
+
+    /// Check if auto thinking mode is enabled
+    var isAutoThinkingEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "autoThinkingMode")
+    }
+
+    /// Thinking budget in tokens
+    var thinkingBudgetTokens: Int {
+        Int(UserDefaults.standard.double(forKey: "thinkingBudgetTokens"))
+    }
+
+    private let webSearchService = WebSearchService.shared
+    private let complexityAnalyzer = QueryComplexityAnalyzer()
+
     init() {
         // Load from UserDefaults or secure storage
         self.apiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
@@ -74,6 +92,98 @@ class GeminiService: ObservableObject {
         return chatModels
     }
     
+    /// Generate a response with optional web search augmentation and thinking mode
+    func generateResponseWithSearch(prompt: String, model: String? = nil) async throws -> String {
+        var augmentedPrompt = prompt
+
+        // If web search is enabled and the query needs current info, fetch search results
+        if isWebSearchEnabled && webSearchService.needsWebSearch(query: prompt) {
+            do {
+                let results = try await webSearchService.search(query: prompt)
+                let context = webSearchService.formatResultsAsContext(results)
+                augmentedPrompt = context + "\n\nUser Query: " + prompt
+            } catch {
+                // Continue without search results if search fails
+                print("Web search failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Check if thinking mode should be used
+        if complexityAnalyzer.shouldUseThinking(query: prompt, autoThinkingEnabled: isAutoThinkingEnabled) {
+            return try await generateResponseWithThinking(prompt: augmentedPrompt)
+        }
+
+        return try await generateResponse(prompt: augmentedPrompt, model: model)
+    }
+
+    /// Generate a response using Gemini's thinking model for complex queries
+    func generateResponseWithThinking(prompt: String) async throws -> String {
+        guard !apiKey.isEmpty else { throw GeminiError.missingAPIKey }
+
+        // Use the thinking model
+        let thinkingModel = "gemini-2.0-flash-thinking-exp"
+
+        var components = URLComponents(string: "https://generativelanguage.googleapis.com/v1beta/models/\(thinkingModel):generateContent")
+        components?.queryItems = [
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+
+        guard let url = components?.url else { throw GeminiError.invalidURL }
+
+        // Build request with thinking configuration
+        let body: [String: Any] = [
+            "contents": [
+                ["parts": [["text": prompt]]]
+            ],
+            "generationConfig": [
+                "thinkingConfig": [
+                    "thinkingBudget": thinkingBudgetTokens
+                ]
+            ]
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, httpResponse) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = httpResponse as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown Error"
+            print("Gemini Thinking API Error: \(errorText)")
+            // Fall back to regular response if thinking model fails
+            return try await generateResponse(prompt: prompt)
+        }
+
+        // Parse the thinking response - it may have a different structure
+        struct ThinkingResponse: Codable {
+            struct Candidate: Codable {
+                struct Content: Codable {
+                    struct Part: Codable {
+                        let text: String?
+                        let thought: String?
+                    }
+                    let parts: [Part]
+                }
+                let content: Content
+            }
+            let candidates: [Candidate]?
+        }
+
+        let apiResponse = try JSONDecoder().decode(ThinkingResponse.self, from: data)
+
+        // Extract the main response (not the thinking)
+        if let candidate = apiResponse.candidates?.first {
+            let textParts = candidate.content.parts.compactMap { $0.text }
+            if !textParts.isEmpty {
+                return textParts.joined(separator: "\n")
+            }
+        }
+
+        return "No response generated."
+    }
+
     func generateResponse(prompt: String, model: String? = nil) async throws -> String {
         guard !apiKey.isEmpty else { throw GeminiError.missingAPIKey }
 

@@ -22,11 +22,23 @@ class BookmarkManager: ObservableObject {
         let bookmark = Bookmark(url: url, title: title, folderId: folderId)
         bookmarks.insert(bookmark, at: 0)
         saveBookmarks()
+
+        // Index in Spotlight
+        SpotlightIndexManager.shared.indexBookmark(url: url, title: title, id: bookmark.id)
+
+        // Sync to widgets
+        WidgetDataSync.shared.addBookmark(bookmark)
     }
 
     func removeBookmark(id: UUID) {
         bookmarks.removeAll { $0.id == id }
         saveBookmarks()
+
+        // Remove from Spotlight
+        SpotlightIndexManager.shared.removeBookmark(id: id)
+
+        // Sync to widgets
+        WidgetDataSync.shared.removeBookmark(id: id)
     }
 
     func updateBookmark(_ bookmark: Bookmark) {

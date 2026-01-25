@@ -18,9 +18,19 @@ struct SettingsView: View {
                     Label("AI Features", systemImage: "brain")
                 }
 
+            MCPSettingsView()
+                .tabItem {
+                    Label("MCP", systemImage: "cpu")
+                }
+
             PrivacySettingsView()
                 .tabItem {
                     Label("Privacy", systemImage: "hand.raised.fill")
+                }
+
+            UpdateSettingsView()
+                .tabItem {
+                    Label("Updates", systemImage: "arrow.down.circle")
                 }
 
             AccountSettingsView(account: UserAccount.shared)
@@ -34,7 +44,7 @@ struct SettingsView: View {
                 }
         }
         .padding()
-        .frame(width: 550, height: 450)
+        .frame(width: 600, height: 520)
     }
 }
 
@@ -90,6 +100,9 @@ struct AISettingsView: View {
     @AppStorage("claudeApiKey") var claudeApiKey = ""
     @AppStorage("claudeModel") var claudeModel = "claude-sonnet-4-20250514"
     @AppStorage("enableAutoSuggest") var enableAutoSuggest = true
+    @AppStorage("enableAIWebSearch") var enableAIWebSearch = false
+    @AppStorage("autoThinkingMode") var autoThinkingMode = true
+    @AppStorage("thinkingBudgetTokens") var thinkingBudgetTokens: Double = 8192
 
     @StateObject private var geminiService = GeminiService()
     @StateObject private var claudeService = ClaudeService()
@@ -173,6 +186,31 @@ struct AISettingsView: View {
                 Text("Allows Canvas to analyze browsing patterns to suggest GenTabs.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+
+            Section("Web Search") {
+                Toggle("Enable AI Web Search", isOn: $enableAIWebSearch)
+                Text("Allow AI to search the internet for current information like news, weather, and prices.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Thinking Mode") {
+                Toggle("Auto Thinking Mode", isOn: $autoThinkingMode)
+                Text("Automatically enable extended thinking for complex queries that benefit from deeper analysis.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if autoThinkingMode {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Thinking Budget: \(Int(thinkingBudgetTokens)) tokens")
+                            .font(.subheadline)
+                        Slider(value: $thinkingBudgetTokens, in: 1024...24576, step: 1024)
+                    }
+                    Text("Higher budgets allow for more thorough reasoning but may increase response time.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

@@ -22,7 +22,7 @@ class HistoryManager: ObservableObject {
         let request = HistoryEntry.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(keyPath: \HistoryEntry.visitDate, ascending: false)]
         request.fetchLimit = limit
-        
+
         do {
             let results = try context.fetch(request) as? [HistoryEntry] ?? []
             return results.map { entry in
@@ -36,6 +36,11 @@ class HistoryManager: ObservableObject {
             print("Failed to fetch history: \(error)")
             return []
         }
+    }
+
+    /// Alias for getRecentHistory for convenience
+    func recentHistory(limit: Int) -> [HistoryItem] {
+        getRecentHistory(limit: limit)
     }
     
     func addEntry(url: String, title: String) {
@@ -56,8 +61,15 @@ class HistoryManager: ObservableObject {
 
 // MARK: - History Item Model
 
-struct HistoryItem {
-    let url: String
-    let title: String
+struct HistoryItem: Identifiable {
+    let id: UUID = UUID()
+    let url: URL?
+    let title: String?
     let visitDate: Date
+
+    init(url: String, title: String, visitDate: Date) {
+        self.url = URL(string: url)
+        self.title = title
+        self.visitDate = visitDate
+    }
 }

@@ -6,7 +6,16 @@ struct CanvasBrowserApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var windowManager = WindowManager.shared
     @StateObject private var shortcutManager = ShortcutManager.shared
+    @AppStorage("theme") private var theme = "System"
     let persistenceController = PersistenceController.shared
+
+    private var colorScheme: ColorScheme? {
+        switch theme {
+        case "Light": return .light
+        case "Dark": return .dark
+        default: return nil  // System default
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -15,12 +24,14 @@ struct CanvasBrowserApp: App {
                 .environmentObject(windowManager)
                 .environmentObject(appState)
                 .environmentObject(shortcutManager)
+                .preferredColorScheme(colorScheme)
                 .onAppear {
                     appDelegate.setup(aiOrchestrator: appState.aiOrchestrator)
                 }
                 .frame(minWidth: WindowManager.WindowSize.minWidth, minHeight: WindowManager.WindowSize.minHeight)
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             SidebarCommands()
             CanvasCommands()

@@ -81,9 +81,22 @@ class BrowsingSession: ObservableObject {
     func addGenTab(_ genTab: GenTab) {
         activeTabs.append(.gen(genTab))
         currentTabId = genTab.id
+
+        // Index in Spotlight
+        SpotlightIndexManager.shared.indexGenTab(genTab)
+
+        // Sync to widgets
+        WidgetDataSync.shared.addGenTab(genTab)
     }
-    
+
     func closeTab(id: UUID) {
+        // Check if it's a GenTab being closed and remove from Spotlight/widgets
+        if let tab = activeTabs.first(where: { $0.id == id }),
+           case .gen(let genTab) = tab {
+            SpotlightIndexManager.shared.removeGenTab(genTab)
+            WidgetDataSync.shared.removeGenTab(genTab)
+        }
+
         activeTabs.removeAll { $0.id == id }
         webViewCache.removeValue(forKey: id)
         coordinatorCache.removeValue(forKey: id)
@@ -94,6 +107,18 @@ class BrowsingSession: ObservableObject {
     
     var currentTab: TabItem? {
         activeTabs.first { $0.id == currentTabId }
+    }
+
+    /// Alias for activeTabs for consistency
+    var tabs: [TabItem] {
+        activeTabs
+    }
+
+    /// Switch to an existing GenTab
+    func switchToGenTab(_ genTab: GenTab) {
+        if activeTabs.contains(where: { $0.id == genTab.id }) {
+            currentTabId = genTab.id
+        }
     }
 
     /// Get all web tabs (excludes GenTabs)
