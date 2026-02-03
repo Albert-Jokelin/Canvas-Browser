@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 
+@MainActor
 class AppState: ObservableObject {
     @Published var sessionManager: BrowsingSession
     @Published var aiOrchestrator: AIOrchestrator
@@ -39,7 +40,7 @@ class AppState: ObservableObject {
             }
             .store(in: &cancellables)
         
-        NotificationCenter.default.addObserver(forName: Notification.Name("TriggerDemoGenTab"), object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(forName: .triggerDemoGenTab, object: nil, queue: .main) { [weak self] _ in
             self?.createGenTabFromSelection()
         }
     }
@@ -69,9 +70,7 @@ class AppState: ObservableObject {
                     ],
                     sourceURLs: []
                 )
-                await MainActor.run {
-                    sessionManager.addGenTab(welcomeTab)
-                }
+                sessionManager.addGenTab(welcomeTab)
                 return
             }
 
@@ -94,9 +93,7 @@ class AppState: ObservableObject {
 
             do {
                 let genTab = try await aiOrchestrator.geminiService.buildGenTab(for: prompt, sourceURLs: sourceAttrs)
-                await MainActor.run {
-                    sessionManager.addGenTab(genTab)
-                }
+                sessionManager.addGenTab(genTab)
             } catch {
                 print("Failed to create GenTab: \(error)")
                 // Create error GenTab
@@ -112,9 +109,7 @@ class AppState: ObservableObject {
                     ],
                     sourceURLs: []
                 )
-                await MainActor.run {
-                    sessionManager.addGenTab(errorTab)
-                }
+                sessionManager.addGenTab(errorTab)
             }
         }
     }

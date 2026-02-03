@@ -23,8 +23,16 @@ enum ClaudeError: Error, LocalizedError {
     }
 }
 
-class ClaudeService: ObservableObject {
-    @Published var apiKey: String = ""
+@MainActor
+class ClaudeService: ObservableObject, AIServiceProtocol {
+    @Published var apiKey: String = "" {
+        didSet {
+            // Save to UserDefaults when API key changes (not Keychain to avoid prompts)
+            if !apiKey.isEmpty && apiKey != oldValue {
+                UserDefaults.standard.set(apiKey, forKey: "claudeApiKey")
+            }
+        }
+    }
     @Published var availableModels: [String] = [
         "claude-sonnet-4-20250514",
         "claude-3-5-sonnet-20241022",
@@ -36,7 +44,13 @@ class ClaudeService: ObservableObject {
     private let apiVersion = "2023-06-01"
 
     init() {
+        // Load from UserDefaults (no Keychain prompt)
         self.apiKey = UserDefaults.standard.string(forKey: "claudeApiKey") ?? ""
+    }
+
+    /// Protocol conformance - simple version that delegates to full version
+    func generateResponse(prompt: String) async throws -> String {
+        try await generateResponse(prompt: prompt, model: "claude-sonnet-4-20250514", systemPrompt: nil)
     }
 
     func generateResponse(prompt: String, model: String = "claude-sonnet-4-20250514", systemPrompt: String? = nil) async throws -> String {
@@ -148,7 +162,7 @@ class ClaudeService: ObservableObject {
     }
 
     /// Build a GenTab based on a prompt using Claude
-    func buildGenTab(for prompt: String) async throws -> GenTab {
+    func buildGenTab(for prompt: String, sourceURLs: [SourceAttribution] = []) async throws -> GenTab {
         let systemPrompt = """
         You are a helpful assistant that creates structured data for visualizations.
         When asked to create something, respond with JSON in this exact format:

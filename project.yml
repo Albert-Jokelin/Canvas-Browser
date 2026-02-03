@@ -53,6 +53,7 @@ targets:
           codesign --force --deep --sign - "${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}"
         name: Sign App
         runOnlyWhenInstalling: false
+        basedOnDependencyAnalysis: false
 
   CanvasBrowserWidgets:
     type: extensionkit-extension

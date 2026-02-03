@@ -26,8 +26,16 @@ enum GeminiError: LocalizedError {
     }
 }
 
-class GeminiService: ObservableObject {
-    @Published var apiKey: String = ""
+@MainActor
+class GeminiService: ObservableObject, AIServiceProtocol {
+    @Published var apiKey: String = "" {
+        didSet {
+            // Save to UserDefaults when API key changes (not Keychain to avoid prompts)
+            if !apiKey.isEmpty && apiKey != oldValue {
+                UserDefaults.standard.set(apiKey, forKey: "geminiApiKey")
+            }
+        }
+    }
 
     /// The model to use - loaded from UserDefaults
     var selectedModel: String {
@@ -53,24 +61,24 @@ class GeminiService: ObservableObject {
     private let complexityAnalyzer = QueryComplexityAnalyzer()
 
     init() {
-        // Load from UserDefaults or secure storage
+        // Load from UserDefaults (no Keychain prompt)
         self.apiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
     }
 
     @Published var availableModels: [String] = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro"]
-    
+
     func fetchModels() async throws -> [String] {
         guard !apiKey.isEmpty else { throw GeminiError.missingAPIKey }
-        
+
         var components = URLComponents(string: "https://generativelanguage.googleapis.com/v1beta/models")
         components?.queryItems = [
             URLQueryItem(name: "key", value: apiKey)
         ]
-        
+
         guard let url = components?.url else { throw GeminiError.invalidURL }
-        
+
         let (data, _) = try await URLSession.shared.data(from: url)
-        
+
         struct ModelListResponse: Codable {
             struct Model: Codable {
                 let name: String
@@ -79,16 +87,14 @@ class GeminiService: ObservableObject {
             }
             let models: [Model]
         }
-        
+
         let response = try JSONDecoder().decode(ModelListResponse.self, from: data)
         let chatModels = response.models
             .filter { $0.supportedGenerationMethods.contains("generateContent") }
             .map { $0.name.replacingOccurrences(of: "models/", with: "") }
-        
-        DispatchQueue.main.async {
-            self.availableModels = chatModels
-        }
-        
+
+        self.availableModels = chatModels
+
         return chatModels
     }
     
@@ -184,6 +190,11 @@ class GeminiService: ObservableObject {
         return "No response generated."
     }
 
+    /// Protocol conformance - simple version that delegates to full version
+    func generateResponse(prompt: String) async throws -> String {
+        try await generateResponse(prompt: prompt, model: nil)
+    }
+
     func generateResponse(prompt: String, model: String? = nil) async throws -> String {
         guard !apiKey.isEmpty else { throw GeminiError.missingAPIKey }
 
@@ -263,6 +274,49 @@ class GeminiService: ObservableObject {
 
     // MARK: - Dynamic GenTab Generation (Component-Based)
 
+    /// Helper to parse GenTab JSON response (deduplicates code across methods)
+    private func parseGenTabJSON(_ jsonString: String, sourceURLs: [SourceAttribution] = [], existingId: UUID? = nil) throws -> GenTab {
+        let cleanedJSON = jsonString
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let jsonData = cleanedJSON.data(using: .utf8) else {
+            throw GeminiError.invalidJSONResponse
+        }
+
+        struct GenTabResponse: Codable {
+            let title: String
+            let icon: String
+            let components: [GenTabComponent]
+        }
+
+        do {
+            let response = try JSONDecoder().decode(GenTabResponse.self, from: jsonData)
+
+            if let existingId = existingId {
+                return GenTab(
+                    id: existingId,
+                    title: response.title,
+                    icon: response.icon,
+                    components: response.components,
+                    sourceURLs: sourceURLs
+                )
+            } else {
+                return GenTab(
+                    title: response.title,
+                    icon: response.icon,
+                    components: response.components,
+                    sourceURLs: sourceURLs
+                )
+            }
+        } catch {
+            print("JSON Decode Error: \(error)")
+            print("Response was: \(cleanedJSON.prefix(500))")
+            throw GeminiError.decodingError
+        }
+    }
+
     func buildGenTab(for prompt: String, sourceURLs: [SourceAttribution] = []) async throws -> GenTab {
         // Create a structured prompt for the component-based system
         let structuredPrompt = """
@@ -319,38 +373,7 @@ class GeminiService: ObservableObject {
         """
 
         let jsonResponse = try await generateResponse(prompt: structuredPrompt)
-
-        // Clean the response
-        let cleanedJSON = jsonResponse
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard let jsonData = cleanedJSON.data(using: .utf8) else {
-            throw GeminiError.invalidJSONResponse
-        }
-
-        // Decode the new component-based structure
-        struct GenTabResponse: Codable {
-            let title: String
-            let icon: String
-            let components: [GenTabComponent]
-        }
-
-        do {
-            let response = try JSONDecoder().decode(GenTabResponse.self, from: jsonData)
-
-            return GenTab(
-                title: response.title,
-                icon: response.icon,
-                components: response.components,
-                sourceURLs: sourceURLs
-            )
-        } catch {
-            print("JSON Decode Error: \(error)")
-            print("Response was: \(cleanedJSON.prefix(500))")
-            throw GeminiError.decodingError
-        }
+        return try parseGenTabJSON(jsonResponse, sourceURLs: sourceURLs)
     }
 
     // MARK: - Legacy GenTab Builder (for backward compatibility)
@@ -544,37 +567,6 @@ class GeminiService: ObservableObject {
         """
 
         let jsonResponse = try await generateResponse(prompt: modifyPrompt)
-
-        // Clean the response
-        let cleanedJSON = jsonResponse
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard let jsonData = cleanedJSON.data(using: .utf8) else {
-            throw GeminiError.invalidJSONResponse
-        }
-
-        struct GenTabResponse: Codable {
-            let title: String
-            let icon: String
-            let components: [GenTabComponent]
-        }
-
-        do {
-            let response = try JSONDecoder().decode(GenTabResponse.self, from: jsonData)
-
-            return GenTab(
-                id: existingGenTab.id, // Keep the same ID
-                title: response.title,
-                icon: response.icon,
-                components: response.components,
-                sourceURLs: existingGenTab.sourceURLs // Keep original sources
-            )
-        } catch {
-            print("JSON Decode Error: \(error)")
-            print("Response was: \(cleanedJSON.prefix(500))")
-            throw GeminiError.decodingError
-        }
+        return try parseGenTabJSON(jsonResponse, sourceURLs: existingGenTab.sourceURLs, existingId: existingGenTab.id)
     }
 }

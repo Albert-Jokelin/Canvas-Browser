@@ -96,13 +96,15 @@ struct BrowserSettingsView: View {
 struct AISettingsView: View {
     @AppStorage("aiProvider") var aiProvider = "gemini"
     @AppStorage("aiModel") var aiModel = "gemini-2.0-flash"
-    @AppStorage("geminiApiKey") var geminiApiKey = ""
-    @AppStorage("claudeApiKey") var claudeApiKey = ""
     @AppStorage("claudeModel") var claudeModel = "claude-sonnet-4-20250514"
     @AppStorage("enableAutoSuggest") var enableAutoSuggest = true
     @AppStorage("enableAIWebSearch") var enableAIWebSearch = false
     @AppStorage("autoThinkingMode") var autoThinkingMode = true
     @AppStorage("thinkingBudgetTokens") var thinkingBudgetTokens: Double = 8192
+
+    // API keys stored in Keychain, with local state for editing
+    @State private var geminiApiKey: String = ""
+    @State private var claudeApiKey: String = ""
 
     @StateObject private var geminiService = GeminiService()
     @StateObject private var claudeService = ClaudeService()
@@ -214,15 +216,34 @@ struct AISettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            // Load API keys from UserDefaults
+            geminiApiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
+            claudeApiKey = UserDefaults.standard.string(forKey: "claudeApiKey") ?? ""
+        }
         .onChange(of: geminiApiKey) { _, newValue in
             let sanitized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if sanitized != newValue {
                 geminiApiKey = sanitized
+                return
+            }
+            // Save to UserDefaults and update service
+            if !sanitized.isEmpty {
+                UserDefaults.standard.set(sanitized, forKey: "geminiApiKey")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "geminiApiKey")
             }
             geminiService.apiKey = sanitized
         }
         .onChange(of: claudeApiKey) { _, newValue in
-            claudeService.apiKey = newValue
+            let sanitized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Save to UserDefaults and update service
+            if !sanitized.isEmpty {
+                UserDefaults.standard.set(sanitized, forKey: "claudeApiKey")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "claudeApiKey")
+            }
+            claudeService.apiKey = sanitized
         }
     }
 

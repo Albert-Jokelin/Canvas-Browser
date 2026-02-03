@@ -1,6 +1,7 @@
 import Foundation
 import WebKit
 import Combine
+import OSLog
 
 class BrowsingSession: ObservableObject {
     @Published var activeTabs: [TabItem] = []
@@ -11,6 +12,16 @@ class BrowsingSession: ObservableObject {
 
     // Cache of coordinators to preserve tab state across switches
     var coordinatorCache: [UUID: WebViewCoordinator] = [:]
+
+    // MARK: - Persistence Keys
+    private let sessionTabsKey = "canvas_session_tabs"
+    private let sessionCurrentTabKey = "canvas_session_current_tab"
+
+    // MARK: - Initialization
+
+    init() {
+        loadSession()
+    }
 
     /// Get or create a coordinator for a tab
     func coordinator(for tabId: UUID) -> WebViewCoordinator {
@@ -97,12 +108,43 @@ class BrowsingSession: ObservableObject {
             WidgetDataSync.shared.removeGenTab(genTab)
         }
 
+        // Properly cleanup WebView resources BEFORE removing from cache
+        if let webView = webViewCache[id] {
+            // Stop all loading
+            webView.stopLoading()
+            
+            // Remove all observers and delegates
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            
+            // Clear website data for this webview
+            let dataStore = webView.configuration.websiteDataStore
+            dataStore.removeData(
+                ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                modifiedSince: Date.distantPast
+            ) {
+                Logger.browser.debug("Cleared website data for closed tab")
+            }
+            
+            // Explicitly clear user scripts to break retain cycles
+            webView.configuration.userContentController.removeAllUserScripts()
+        }
+        
+        // Cleanup coordinator
+        if let coordinator = coordinatorCache[id] {
+            coordinator.cleanup()
+        }
+        
+        // Now remove from caches
         activeTabs.removeAll { $0.id == id }
         webViewCache.removeValue(forKey: id)
         coordinatorCache.removeValue(forKey: id)
+        
         if currentTabId == id {
             currentTabId = activeTabs.last?.id
         }
+        
+        Logger.browser.info("Closed tab: \(id)")
     }
     
     var currentTab: TabItem? {
@@ -166,8 +208,72 @@ class BrowsingSession: ObservableObject {
         }
     }
 
-    // Persistence Logic
+    // MARK: - Persistence Logic
+
+    /// Save the current session state to UserDefaults
     func saveSession() {
-        print("Saving session with \(activeTabs.count) tabs")
+        // Only save non-private tabs
+        let tabsToSave = activeTabs.filter { tab in
+            if case .web(let webTab) = tab {
+                return !webTab.isPrivate
+            }
+            return true
+        }
+
+        do {
+            let encoder = JSONEncoder()
+            let tabsData = try encoder.encode(tabsToSave)
+            UserDefaults.standard.set(tabsData, forKey: sessionTabsKey)
+
+            // Save current tab ID if it's not a private tab
+            if let currentId = currentTabId,
+               tabsToSave.contains(where: { $0.id == currentId }) {
+                UserDefaults.standard.set(currentId.uuidString, forKey: sessionCurrentTabKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: sessionCurrentTabKey)
+            }
+
+            Logger.persistence.debug("Saved session with \(tabsToSave.count) tabs")
+        } catch {
+            Logger.persistence.error("Failed to save session: \(error.localizedDescription)")
+            CrashReporter.shared.recordError(error, context: ["operation": "saveSession"])
+        }
+    }
+
+    /// Load session state from UserDefaults
+    func loadSession() {
+        guard let tabsData = UserDefaults.standard.data(forKey: sessionTabsKey) else {
+            Logger.persistence.info("No saved session found")
+            return
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let loadedTabs = try decoder.decode([TabItem].self, from: tabsData)
+
+            if !loadedTabs.isEmpty {
+                activeTabs = loadedTabs
+
+                // Restore current tab
+                if let currentTabString = UserDefaults.standard.string(forKey: sessionCurrentTabKey),
+                   let currentId = UUID(uuidString: currentTabString),
+                   activeTabs.contains(where: { $0.id == currentId }) {
+                    currentTabId = currentId
+                } else {
+                    currentTabId = activeTabs.first?.id
+                }
+
+                Logger.persistence.info("Restored session with \(loadedTabs.count) tabs")
+            }
+        } catch {
+            Logger.persistence.error("Failed to load session: \(error.localizedDescription)")
+            CrashReporter.shared.recordError(error, context: ["operation": "loadSession"])
+        }
+    }
+
+    /// Clear saved session data
+    func clearSavedSession() {
+        UserDefaults.standard.removeObject(forKey: sessionTabsKey)
+        UserDefaults.standard.removeObject(forKey: sessionCurrentTabKey)
     }
 }

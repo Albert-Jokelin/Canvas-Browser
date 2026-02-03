@@ -1,6 +1,8 @@
 import Foundation
 import Security
 import Combine
+import CommonCrypto
+import OSLog
 
 // MARK: - Saved Password Model
 
@@ -34,6 +36,10 @@ struct SavedPassword: Identifiable, Codable, Hashable {
 
 // MARK: - Password Manager
 
+/// **DEPRECATED**: This custom password manager is deprecated in favor of native macOS Passwords app integration.
+/// The app now uses system AutoFill which integrates with macOS Passwords app.
+/// This class is kept for backward compatibility but is no longer actively used.
+@available(*, deprecated, message: "Use native macOS Passwords app with AutoFill instead")
 class PasswordManager: ObservableObject {
     static let shared = PasswordManager()
 
@@ -230,15 +236,205 @@ class PasswordManager: ObservableObject {
 
     // MARK: - Authentication
 
+    private let masterPasswordKey = "canvas_master_password_hash"
+
+    /// Set up master password for the first time
+    func setupMasterPassword(_ password: String) -> Bool {
+        guard !password.isEmpty else { return false }
+
+        // Hash the password using SHA-256
+        guard let hash = hashPassword(password) else { return false }
+
+        // Store the hash in Keychain
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: masterPasswordKey,
+            kSecValueData as String: hash.data(using: .utf8)!,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
+        ]
+
+        // Delete existing if any
+        SecItemDelete(query as CFDictionary)
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+
+    /// Check if master password has been set up
+    var isMasterPasswordSetup: Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: masterPasswordKey,
+            kSecReturnData as String: false
+        ]
+
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+
+    /// Unlock with master password validation
     func unlock(with password: String) -> Bool {
-        // In a real implementation, this would verify against a master password
-        // For now, we just set unlocked to true
-        isUnlocked = true
-        return true
+        // If no master password is set, set it up with the provided password
+        if !isMasterPasswordSetup {
+            if setupMasterPassword(password) {
+                isUnlocked = true
+                return true
+            }
+            return false
+        }
+
+        // Retrieve stored hash
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: masterPasswordKey,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let hashData = result as? Data,
+              let storedHash = String(data: hashData, encoding: .utf8) else {
+            Logger.security.warning("Failed to retrieve master password hash")
+            return false
+        }
+
+        // Verify password using PBKDF2
+        let isValid = verifyPassword(password, against: storedHash)
+
+        if isValid {
+            isUnlocked = true
+        }
+
+        return isValid
     }
 
     func lock() {
         isUnlocked = false
+    }
+
+    /// Hash password using PBKDF2 with salt (OWASP recommended)
+    /// - Parameter password: Plain text password
+    /// - Returns: Base64-encoded salt + hash (16 bytes salt + 32 bytes hash)
+    private func hashPassword(_ password: String) -> String? {
+        guard let data = password.data(using: .utf8) else {
+            Logger.security.error("Failed to convert password to UTF-8")
+            return nil
+        }
+
+        // Generate random salt (16 bytes)
+        var salt = Data(count: 16)
+        let saltResult = salt.withUnsafeMutableBytes { saltBytes in
+            SecRandomCopyBytes(kSecRandomDefault, 16, saltBytes.baseAddress!)
+        }
+
+        guard saltResult == errSecSuccess else {
+            Logger.security.error("Failed to generate salt for password hashing")
+            CrashReporter.shared.recordError(
+                SecurityError.keychainSaveFailed(status: saltResult),
+                context: ["operation": "generateSalt"]
+            )
+            return nil
+        }
+
+        // Use PBKDF2 with 100,000 iterations (OWASP recommendation for 2024)
+        let iterations = 100_000
+        let keyLength = 32
+
+        var derivedKey = Data(count: keyLength)
+        let derivationStatus = derivedKey.withUnsafeMutableBytes { derivedKeyBytes in
+            salt.withUnsafeBytes { saltBytes in
+                data.withUnsafeBytes { passwordBytes in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordBytes.baseAddress!.assumingMemoryBound(to: Int8.self),
+                        data.count,
+                        saltBytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                        UInt32(iterations),
+                        derivedKeyBytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        keyLength
+                    )
+                }
+            }
+        }
+
+        guard derivationStatus == kCCSuccess else {
+            Logger.security.error("Password derivation failed with status: \(derivationStatus)")
+            return nil
+        }
+
+        // Store salt + hash together (16 + 32 = 48 bytes)
+        let combined = salt + derivedKey
+        Logger.security.debug("Password hashed successfully with PBKDF2")
+        return combined.base64EncodedString()
+    }
+
+    /// Verify password against stored hash
+    /// - Parameters:
+    ///   - password: Plain text password to verify
+    ///   - storedHash: Base64-encoded salt + hash from storage
+    /// - Returns: True if password matches
+    private func verifyPassword(_ password: String, against storedHash: String) -> Bool {
+        guard let combined = Data(base64Encoded: storedHash),
+              combined.count >= 48 else { // 16 bytes salt + 32 bytes hash
+            Logger.security.error("Invalid stored hash format")
+            return false
+        }
+
+        let salt = combined.prefix(16)
+        let storedKey = combined.suffix(32)
+
+        // Derive key with same salt
+        guard let data = password.data(using: .utf8) else {
+            Logger.security.error("Failed to convert password to UTF-8")
+            return false
+        }
+
+        var derivedKey = Data(count: 32)
+        let derivationStatus = derivedKey.withUnsafeMutableBytes { derivedKeyBytes in
+            salt.withUnsafeBytes { saltBytes in
+                data.withUnsafeBytes { passwordBytes in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordBytes.baseAddress!.assumingMemoryBound(to: Int8.self),
+                        data.count,
+                        saltBytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                        100_000,
+                        derivedKeyBytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        32
+                    )
+                }
+            }
+        }
+
+        guard derivationStatus == kCCSuccess else {
+            Logger.security.error("Password verification derivation failed")
+            return false
+        }
+
+        // Constant-time comparison
+        return secureCompare(derivedKey, storedKey)
+    }
+
+    /// Constant-time Data comparison to prevent timing attacks
+    private func secureCompare(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+
+        var result: UInt8 = 0
+        for (byte1, byte2) in zip(a, b) {
+            result |= byte1 ^ byte2
+        }
+
+        return result == 0
     }
 }
 

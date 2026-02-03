@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
+@MainActor
 class AIOrchestrator: ObservableObject {
     @Published var currentIntent: SemanticIntent?
     @Published var suggestedActions: [AIAction] = []
@@ -22,6 +23,9 @@ class AIOrchestrator: ObservableObject {
     /// Tracks dismissed suggestions to avoid re-showing
     private var dismissedSuggestionHashes: Set<String> = []
 
+    /// Tracks last analyzed tab IDs to skip redundant analysis
+    private var lastAnalyzedTabIds: Set<UUID> = []
+
     /// Reference to the browsing session for tab access (set by AppState)
     weak var sessionManager: BrowsingSession?
 
@@ -32,6 +36,11 @@ class AIOrchestrator: ObservableObject {
         self.intentClassifier = IntentClassifier()
 
         startIntentDetection()
+    }
+
+    deinit {
+        intentTimer?.invalidate()
+        intentTimer = nil
     }
 
     // MARK: - Intent Detection
@@ -66,14 +75,12 @@ class AIOrchestrator: ObservableObject {
 
                 let genTab = try await geminiService.buildGenTab(for: message, sourceURLs: sourceAttrs)
 
-                await MainActor.run {
-                    self.recentGenTabs.append(genTab)
-                    self.sessionManager?.addGenTab(genTab)
-                }
+                self.recentGenTabs.append(genTab)
+                self.sessionManager?.addGenTab(genTab)
 
                 // Notify UI to show GenTab
                 NotificationCenter.default.post(
-                    name: NSNotification.Name("genTabCreated"),
+                    name: .genTabCreated,
                     object: nil,
                     userInfo: ["genTab": genTab]
                 )
@@ -110,12 +117,18 @@ class AIOrchestrator: ObservableObject {
 
         // Need at least 2 tabs for meaningful analysis
         guard tabsWithViews.count >= 2 else {
-            await MainActor.run {
-                self.pendingSuggestion = nil
-                self.showSuggestionBanner = false
-            }
+            self.pendingSuggestion = nil
+            self.showSuggestionBanner = false
             return
         }
+
+        // Skip analysis if tabs haven't changed
+        let currentTabIds = Set(tabsWithViews.map { $0.id })
+        guard currentTabIds != lastAnalyzedTabIds else {
+            print("Tabs unchanged, skipping analysis")
+            return
+        }
+        lastAnalyzedTabIds = currentTabIds
 
         // Extract content from open tabs
         let extractedContents = await contentExtractor.extractAllTabs(webTabs: tabsWithViews)
@@ -136,11 +149,9 @@ class AIOrchestrator: ObservableObject {
 
             print("Intent detected: \(analysis.suggestedTitle ?? "Unknown") (confidence: \(analysis.confidence))")
 
-            await MainActor.run {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    self.pendingSuggestion = analysis
-                    self.showSuggestionBanner = true
-                }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                self.pendingSuggestion = analysis
+                self.showSuggestionBanner = true
             }
         } else {
             print("No actionable intent detected (confidence: \(analysis.confidence))")
@@ -181,15 +192,13 @@ class AIOrchestrator: ObservableObject {
         do {
             let genTab = try await geminiService.buildGenTab(for: prompt, sourceURLs: sourceAttrs)
 
-            await MainActor.run {
-                self.recentGenTabs.append(genTab)
-                self.sessionManager?.addGenTab(genTab)
-                self.pendingSuggestion = nil
-                self.showSuggestionBanner = false
-            }
+            self.recentGenTabs.append(genTab)
+            self.sessionManager?.addGenTab(genTab)
+            self.pendingSuggestion = nil
+            self.showSuggestionBanner = false
 
             NotificationCenter.default.post(
-                name: NSNotification.Name("genTabCreated"),
+                name: .genTabCreated,
                 object: nil,
                 userInfo: ["genTab": genTab]
             )
@@ -198,10 +207,8 @@ class AIOrchestrator: ObservableObject {
         } catch {
             print("Failed to create GenTab: \(error)")
 
-            await MainActor.run {
-                self.pendingSuggestion = nil
-                self.showSuggestionBanner = false
-            }
+            self.pendingSuggestion = nil
+            self.showSuggestionBanner = false
         }
     }
 
@@ -261,13 +268,11 @@ class AIOrchestrator: ObservableObject {
         Task {
             do {
                 let genTab = try await geminiService.buildGenTab(for: "Analyze this URL: \(url.absoluteString)")
-                await MainActor.run {
-                    self.recentGenTabs.append(genTab)
-                    self.sessionManager?.addGenTab(genTab)
-                }
+                self.recentGenTabs.append(genTab)
+                self.sessionManager?.addGenTab(genTab)
 
                 NotificationCenter.default.post(
-                    name: NSNotification.Name("genTabCreated"),
+                    name: .genTabCreated,
                     object: nil,
                     userInfo: ["genTab": genTab]
                 )

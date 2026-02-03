@@ -87,28 +87,40 @@ class BookmarkManager: ObservableObject {
     // MARK: - Persistence
 
     private func saveBookmarks() {
-        if let data = try? JSONEncoder().encode(bookmarks) {
+        do {
+            let data = try JSONEncoder().encode(bookmarks)
             UserDefaults.standard.set(data, forKey: bookmarksKey)
+        } catch {
+            print("Failed to save bookmarks: \(error.localizedDescription)")
         }
     }
 
     private func loadBookmarks() {
-        if let data = UserDefaults.standard.data(forKey: bookmarksKey),
-           let decoded = try? JSONDecoder().decode([Bookmark].self, from: data) {
-            bookmarks = decoded
+        guard let data = UserDefaults.standard.data(forKey: bookmarksKey) else { return }
+
+        do {
+            bookmarks = try JSONDecoder().decode([Bookmark].self, from: data)
+        } catch {
+            print("Failed to load bookmarks: \(error.localizedDescription)")
         }
     }
 
     private func saveFolders() {
-        if let data = try? JSONEncoder().encode(folders) {
+        do {
+            let data = try JSONEncoder().encode(folders)
             UserDefaults.standard.set(data, forKey: foldersKey)
+        } catch {
+            print("Failed to save bookmark folders: \(error.localizedDescription)")
         }
     }
 
     private func loadFolders() {
-        if let data = UserDefaults.standard.data(forKey: foldersKey),
-           let decoded = try? JSONDecoder().decode([BookmarkFolder].self, from: data) {
-            folders = decoded
+        guard let data = UserDefaults.standard.data(forKey: foldersKey) else { return }
+
+        do {
+            folders = try JSONDecoder().decode([BookmarkFolder].self, from: data)
+        } catch {
+            print("Failed to load bookmark folders: \(error.localizedDescription)")
         }
     }
 }

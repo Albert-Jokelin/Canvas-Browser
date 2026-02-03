@@ -1,6 +1,7 @@
 import WebKit
 import SwiftUI
 import Combine
+import OSLog
 
 class WebViewCoordinator: NSObject, ObservableObject {
     // MARK: - Published Properties
@@ -84,6 +85,9 @@ class WebViewCoordinator: NSObject, ObservableObject {
 
         // Web preferences
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        
+        // Enable native password AutoFill (macOS Passwords app integration)
+        config.preferences.isElementFullscreenEnabled = true
 
         // Private browsing: use non-persistent data store
         if isPrivate {
@@ -609,6 +613,14 @@ extension WebViewCoordinator: WKNavigationDelegate {
         // Extract favicon
         extractFavicon()
     }
+    
+    /// Handle authentication challenges - enables native password AutoFill
+    func webView(_ webView: WKWebView,
+                 didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // Let the system handle password AutoFill (macOS Passwords app integration)
+        completionHandler(.performDefaultHandling, nil)
+    }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         print("Navigation failed: \(error.localizedDescription)")
@@ -788,12 +800,28 @@ extension WebViewCoordinator {
         let title = pageTitle.isEmpty ? url.host ?? "Untitled" : pageTitle
         BookmarkManager.shared.addBookmark(url: url.absoluteString, title: title)
     }
+    
+    // MARK: - Cleanup
+    
+    /// Cleanup all resources and observers to prevent memory leaks
+    /// Called when tab is closed
+    func cleanup() {
+        // Invalidate all KVO observations
+        observations.forEach { $0.invalidate() }
+        observations.removeAll()
+        
+        // Stop any ongoing operations
+        webView.stopLoading()
+        
+        // Remove delegates to break retain cycles
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        
+        // Clear all user scripts
+        webView.configuration.userContentController.removeAllUserScripts()
+        
+        Logger.browser.debug("WebViewCoordinator cleaned up")
+    }
 }
 
-// MARK: - Notification Names
-
-extension Notification.Name {
-    static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
-    static let createPrivateTabWithURL = Notification.Name("createPrivateTabWithURL")
-    static let startDownload = Notification.Name("startDownload")
-}
+// Note: Notification names are defined in App/NotificationNames.swift

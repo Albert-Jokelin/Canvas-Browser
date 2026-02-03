@@ -9,10 +9,13 @@ struct ChatPanelView: View {
     ]
     @State private var isLoading = false
     @EnvironmentObject var appState: AppState
-    @StateObject private var geminiService = GeminiService()
 
-    @AppStorage("geminiApiKey") var apiKey = ""
     @AppStorage("aiModel") var aiModel = "gemini-2.0-flash"
+
+    /// Access the shared GeminiService through the orchestrator
+    private var geminiService: GeminiService {
+        appState.aiOrchestrator.geminiService
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -145,12 +148,10 @@ struct ChatPanelView: View {
 
         Task {
             do {
-                if apiKey.isEmpty {
+                if geminiService.apiKey.isEmpty {
                     try await Task.sleep(nanoseconds: 500_000_000)
                     messages.append(ChatMessage(role: .assistant, content: "Please set your Gemini API Key in Settings to chat with me."))
                 } else {
-                    geminiService.apiKey = apiKey
-
                     let lowerText = text.lowercased()
                     if lowerText.contains("gentab") || lowerText.contains("build") || lowerText.contains("garden") || lowerText.contains("plan") {
 

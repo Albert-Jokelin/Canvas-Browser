@@ -131,8 +131,7 @@ enum GenTabComponent: Codable, Equatable {
     }
 
     struct CardData: Codable, Equatable, Identifiable {
-        var id: UUID { UUID() } // Computed for Identifiable, not stored
-
+        let id: UUID
         let title: String
         let subtitle: String?
         let description: String?
@@ -140,8 +139,31 @@ enum GenTabComponent: Codable, Equatable {
         let sourceURL: String?
         let metadata: [String: String]?
 
+        init(id: UUID = UUID(), title: String, subtitle: String? = nil, description: String? = nil,
+             imageURL: String? = nil, sourceURL: String? = nil, metadata: [String: String]? = nil) {
+            self.id = id
+            self.title = title
+            self.subtitle = subtitle
+            self.description = description
+            self.imageURL = imageURL
+            self.sourceURL = sourceURL
+            self.metadata = metadata
+        }
+
         private enum CodingKeys: String, CodingKey {
-            case title, subtitle, description, imageURL, sourceURL, metadata
+            case id, title, subtitle, description, imageURL, sourceURL, metadata
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            // Generate ID if not present in JSON (backwards compatibility)
+            self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+            self.title = try container.decode(String.self, forKey: .title)
+            self.subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+            self.description = try container.decodeIfPresent(String.self, forKey: .description)
+            self.imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+            self.sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)
+            self.metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata)
         }
     }
 

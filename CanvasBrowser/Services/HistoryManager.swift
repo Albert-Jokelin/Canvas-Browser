@@ -1,12 +1,23 @@
 import Foundation
 import CoreData
+import OSLog
 
 class HistoryManager: ObservableObject {
     static let shared = HistoryManager()
-    
+
     @Published var historyEntries: [HistoryEntry] = []
-    
-    private let context = PersistenceController.shared.container.viewContext
+
+    private let context: NSManagedObjectContext
+
+    /// Standard initializer using shared persistence controller
+    private init() {
+        self.context = PersistenceController.shared.container.viewContext
+    }
+
+    /// Injectable initializer for testing
+    init(context: NSManagedObjectContext) {
+        self.context = context
+    }
     
     // struct HistoryEntry: Identifiable {
     //     let id: UUID
@@ -50,12 +61,59 @@ class HistoryManager: ObservableObject {
         entry.title = title
         entry.visitDate = Date()
         entry.visitCount = 1
-        
-        try? context.save()
+
+        do {
+            try context.save()
+        } catch {
+            print("Failed to save history entry: \(error.localizedDescription)")
+        }
     }
 
-    func addVisit(url: String, title: String){
-        // return []
+    /// Record a visit to a URL, updating existing entry or creating new one
+    func addVisit(url: String, title: String) {
+        // Skip empty or about: URLs
+        guard !url.isEmpty, !url.hasPrefix("about:") else { return }
+
+        // Use background context to avoid blocking main thread
+        let backgroundContext = PersistenceController.shared.container.newBackgroundContext()
+        backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        
+        backgroundContext.perform {
+            let request = HistoryEntry.fetchRequest()
+            request.predicate = NSPredicate(format: "url == %@", url)
+            request.fetchLimit = 1
+
+            do {
+                let results = try backgroundContext.fetch(request) as? [HistoryEntry] ?? []
+
+                if let existing = results.first {
+                    // Update existing entry
+                    existing.visitCount += 1
+                    existing.visitDate = Date()
+                    if !title.isEmpty {
+                        existing.title = title
+                    }
+                    Logger.persistence.debug("Updated history entry: \(url)")
+                } else {
+                    // Create new entry
+                    let entry = HistoryEntry(context: backgroundContext)
+                    entry.id = UUID()
+                    entry.url = url
+                    entry.title = title.isEmpty ? "Untitled" : title
+                    entry.visitDate = Date()
+                    entry.visitCount = 1
+                    Logger.persistence.debug("Created history entry: \(url)")
+                }
+
+                if backgroundContext.hasChanges {
+                    try backgroundContext.save()
+                }
+            } catch {
+                Logger.persistence.error("Failed to add history visit: \(error.localizedDescription)")
+                CrashReporter.shared.recordError(error, context: ["url": url])
+                backgroundContext.rollback()
+            }
+        }
     }
 }
 
