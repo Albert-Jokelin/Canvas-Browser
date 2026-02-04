@@ -121,6 +121,13 @@ The project includes GitHub Actions workflows for:
 5. Push to the branch
 6. Open a Pull Request
 
+## TODO
+- Block ads like brave 
+- Support for safari extensions
+- Bug Fixes
+- Move from personal to org repo 
+- Support for in-browser MAW
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
