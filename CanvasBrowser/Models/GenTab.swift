@@ -9,16 +9,33 @@ struct GenTab: Identifiable, Codable {
     var title: String
     var icon: String // SF Symbol
     var components: [GenTabComponent]
+    var html: String?
     var sourceURLs: [SourceAttribution]
     let createdAt: Date
 
-    init(id: UUID = UUID(), title: String, icon: String, components: [GenTabComponent] = [], sourceURLs: [SourceAttribution] = []) {
+    // CloudKit sync support
+    var cloudKitRecordID: String?
+    var lastSyncedAt: Date?
+    var isSynced: Bool { cloudKitRecordID != nil }
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        icon: String,
+        components: [GenTabComponent] = [],
+        html: String? = nil,
+        sourceURLs: [SourceAttribution] = [],
+        cloudKitRecordID: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.icon = icon
         self.components = components
+        self.html = html
         self.sourceURLs = sourceURLs
         self.createdAt = Date()
+        self.cloudKitRecordID = cloudKitRecordID
+        self.lastSyncedAt = nil
     }
 
     // Legacy convenience initializer for backward compatibility
@@ -28,6 +45,7 @@ struct GenTab: Identifiable, Codable {
         self.icon = icon
         self.createdAt = Date()
         self.sourceURLs = []
+        self.html = nil
 
         // Convert legacy format to components
         var components: [GenTabComponent] = []

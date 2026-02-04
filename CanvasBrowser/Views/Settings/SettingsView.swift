@@ -23,6 +23,16 @@ struct SettingsView: View {
                     Label("MCP", systemImage: "cpu")
                 }
 
+            iCloudSettingsView()
+                .tabItem {
+                    Label("iCloud", systemImage: "icloud")
+                }
+
+            FocusSettingsView()
+                .tabItem {
+                    Label("Focus", systemImage: "moon.fill")
+                }
+
             PrivacySettingsView()
                 .tabItem {
                     Label("Privacy", systemImage: "hand.raised.fill")
@@ -44,7 +54,7 @@ struct SettingsView: View {
                 }
         }
         .padding()
-        .frame(width: 600, height: 520)
+        .frame(width: 650, height: 560)
     }
 }
 
@@ -66,6 +76,15 @@ struct GeneralSettingsView: View {
                 Text("System").tag("System")
                 Text("Light").tag("Light")
                 Text("Dark").tag("Dark")
+            }
+
+            Section("Apple Developer Program Required") {
+                Text("These features are disabled without a paid Apple Developer Program membership:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("- iCloud / CloudKit sync\n- Apple Pay in web checkout\n- Widget data sync (App Groups)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -319,5 +338,222 @@ struct AccountSettingsView: View {
 struct ShortcutsSettingsView: View {
     var body: some View {
         KeyboardShortcutsReferenceView()
+    }
+}
+
+// MARK: - iCloud Settings
+
+struct iCloudSettingsView: View {
+    @ObservedObject private var cloudKitManager = CloudKitManager.shared
+    @ObservedObject private var syncCoordinator = SyncCoordinator.shared
+
+    @AppStorage("syncBookmarks") private var syncBookmarks = true
+    @AppStorage("syncReadingList") private var syncReadingList = true
+    @AppStorage("syncGenTabs") private var syncGenTabs = true
+    @AppStorage("syncTabGroups") private var syncTabGroups = false
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Image(systemName: cloudKitManager.iCloudAvailable ? "checkmark.icloud.fill" : "xmark.icloud")
+                        .font(.title2)
+                        .foregroundColor(cloudKitManager.iCloudAvailable ? .green : .red)
+
+                    VStack(alignment: .leading) {
+                        Text(cloudKitManager.iCloudAvailable ? "iCloud Connected" : "iCloud Not Available")
+                            .font(.headline)
+                        Text(cloudKitManager.syncStatus.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    if syncCoordinator.isSyncing {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            }
+
+            Section("Sync Options") {
+                Toggle("Bookmarks", isOn: $syncBookmarks)
+                Toggle("Reading List", isOn: $syncReadingList)
+                Toggle("GenTabs", isOn: $syncGenTabs)
+                Toggle("Tab Groups", isOn: $syncTabGroups)
+
+                Text("Synced data is encrypted and stored in your personal iCloud account.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("Requires a paid Apple Developer Program membership with iCloud capability enabled.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Sync Status") {
+                if let lastSync = syncCoordinator.lastSyncTime {
+                    LabeledContent("Last Sync", value: formatDate(lastSync))
+                } else {
+                    LabeledContent("Last Sync", value: "Never")
+                }
+
+                LabeledContent("Pending Changes", value: "\(syncCoordinator.pendingChanges)")
+
+                Button("Sync Now") {
+                    syncCoordinator.triggerSync()
+                }
+                .disabled(!cloudKitManager.iCloudAvailable || syncCoordinator.isSyncing)
+            }
+
+            Section("Handoff") {
+                Toggle("Enable Handoff", isOn: .constant(true))
+                    .disabled(true) // Always enabled when entitlements are correct
+
+                Text("Continue browsing on your iPhone, iPad, or another Mac signed into the same iCloud account.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - Focus Settings
+
+struct FocusSettingsView: View {
+    @ObservedObject private var focusManager = FocusFilterManager.shared
+
+    @State private var customDomainsText = ""
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Image(systemName: focusManager.isFocusModeActive ? "moon.fill" : "moon")
+                        .font(.title2)
+                        .foregroundColor(focusManager.isFocusModeActive ? .purple : .secondary)
+
+                    VStack(alignment: .leading) {
+                        Text(focusManager.isFocusModeActive ? "Focus Mode Active" : "Focus Mode Inactive")
+                            .font(.headline)
+                        Text("Configure via System Settings > Focus")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section("When Focus is Active") {
+                Toggle("Hide Social Media Bookmarks", isOn: Binding(
+                    get: { focusManager.currentConfiguration.hideSocialBookmarks },
+                    set: { newValue in
+                        var config = focusManager.currentConfiguration
+                        config.hideSocialBookmarks = newValue
+                        focusManager.applyConfiguration(config)
+                    }
+                ))
+
+                Toggle("Block Distracting Sites", isOn: Binding(
+                    get: { focusManager.currentConfiguration.blockDistractingSites },
+                    set: { newValue in
+                        var config = focusManager.currentConfiguration
+                        config.blockDistractingSites = newValue
+                        focusManager.applyConfiguration(config)
+                    }
+                ))
+
+                Toggle("Disable AI Suggestions", isOn: Binding(
+                    get: { focusManager.currentConfiguration.disableAISuggestions },
+                    set: { newValue in
+                        var config = focusManager.currentConfiguration
+                        config.disableAISuggestions = newValue
+                        focusManager.applyConfiguration(config)
+                    }
+                ))
+
+                Toggle("Simplified UI", isOn: Binding(
+                    get: { focusManager.currentConfiguration.useSimplifiedUI },
+                    set: { newValue in
+                        var config = focusManager.currentConfiguration
+                        config.useSimplifiedUI = newValue
+                        focusManager.applyConfiguration(config)
+                    }
+                ))
+            }
+
+            Section("Custom Blocked Domains") {
+                TextField("Enter domains (comma-separated)", text: $customDomainsText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        updateCustomDomains()
+                    }
+
+                Text("Example: example.com, another-site.org")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if !focusManager.currentConfiguration.customBlockedDomains.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(focusManager.currentConfiguration.customBlockedDomains, id: \.self) { domain in
+                                HStack(spacing: 4) {
+                                    Text(domain)
+                                        .font(.caption)
+                                    Button(action: { removeDomain(domain) }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.secondary.opacity(0.2))
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !focusManager.blockedNavigationAttempts.isEmpty {
+                Section("Recently Blocked") {
+                    let stats = focusManager.blockStatistics
+                    LabeledContent("Total Blocked", value: "\(stats.totalBlocked)")
+
+                    Button("Clear History") {
+                        focusManager.clearBlockedAttempts()
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            customDomainsText = focusManager.currentConfiguration.customBlockedDomains.joined(separator: ", ")
+        }
+    }
+
+    private func updateCustomDomains() {
+        let domains = customDomainsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        var config = focusManager.currentConfiguration
+        config.customBlockedDomains = domains
+        focusManager.applyConfiguration(config)
+    }
+
+    private func removeDomain(_ domain: String) {
+        var config = focusManager.currentConfiguration
+        config.customBlockedDomains.removeAll { $0 == domain }
+        focusManager.applyConfiguration(config)
+        customDomainsText = config.customBlockedDomains.joined(separator: ", ")
     }
 }

@@ -2,6 +2,12 @@ import Foundation
 
 // MARK: - MCP Server Configuration
 
+enum MCPTransportType: String, Codable {
+    case stdio
+    case httpSSE
+    case webSocket
+}
+
 /// Configuration for an MCP server connection
 struct MCPServerConfig: Codable, Identifiable, Equatable {
     let id: UUID
@@ -9,19 +15,65 @@ struct MCPServerConfig: Codable, Identifiable, Equatable {
     var command: String       // e.g., "npx", "uvx", "/path/to/server"
     var args: [String]        // e.g., ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
     var env: [String: String]?
+    var transport: MCPTransportType
+    var url: String?
+    var headers: [String: String]?
     var isEnabled: Bool
 
-    init(id: UUID = UUID(), name: String, command: String, args: [String], env: [String: String]? = nil, isEnabled: Bool = true) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        command: String,
+        args: [String],
+        env: [String: String]? = nil,
+        transport: MCPTransportType = .stdio,
+        url: String? = nil,
+        headers: [String: String]? = nil,
+        isEnabled: Bool = true
+    ) {
         self.id = id
         self.name = name
         self.command = command
         self.args = args
         self.env = env
+        self.transport = transport
+        self.url = url
+        self.headers = headers
         self.isEnabled = isEnabled
     }
 
     static func == (lhs: MCPServerConfig, rhs: MCPServerConfig) -> Bool {
         lhs.id == rhs.id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, command, args, env, transport, url, headers, isEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        command = try container.decodeIfPresent(String.self, forKey: .command) ?? ""
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        env = try container.decodeIfPresent([String: String].self, forKey: .env)
+        transport = try container.decodeIfPresent(MCPTransportType.self, forKey: .transport) ?? .stdio
+        url = try container.decodeIfPresent(String.self, forKey: .url)
+        headers = try container.decodeIfPresent([String: String].self, forKey: .headers)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(command, forKey: .command)
+        try container.encode(args, forKey: .args)
+        try container.encodeIfPresent(env, forKey: .env)
+        try container.encode(transport, forKey: .transport)
+        try container.encodeIfPresent(url, forKey: .url)
+        try container.encodeIfPresent(headers, forKey: .headers)
+        try container.encode(isEnabled, forKey: .isEnabled)
     }
 }
 

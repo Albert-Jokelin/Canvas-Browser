@@ -288,25 +288,31 @@ class GeminiService: ObservableObject, AIServiceProtocol {
         struct GenTabResponse: Codable {
             let title: String
             let icon: String
-            let components: [GenTabComponent]
+            let components: [GenTabComponent]?
+            let html: String?
         }
 
         do {
             let response = try JSONDecoder().decode(GenTabResponse.self, from: jsonData)
+
+            let components = response.components ?? []
+            let html = response.html
 
             if let existingId = existingId {
                 return GenTab(
                     id: existingId,
                     title: response.title,
                     icon: response.icon,
-                    components: response.components,
+                    components: components,
+                    html: html,
                     sourceURLs: sourceURLs
                 )
             } else {
                 return GenTab(
                     title: response.title,
                     icon: response.icon,
-                    components: response.components,
+                    components: components,
+                    html: html,
                     sourceURLs: sourceURLs
                 )
             }
@@ -327,8 +333,10 @@ class GeminiService: ObservableObject, AIServiceProtocol {
         \(localeContext)
         Use the user's currency and measurement system in all outputs. Format prices, distances, weights, and temperatures according to their locale.
 
-        ### COMPONENT SCHEMA
-        Respond with JSON matching this exact structure:
+        ### RESPONSE FORMAT
+        Respond with JSON matching ONE of the following structures.
+
+        Component-based:
         {
           "title": "string",
           "icon": "SF Symbol name (e.g., cart.fill, airplane, book.fill)",
@@ -349,8 +357,20 @@ class GeminiService: ObservableObject, AIServiceProtocol {
           ]
         }
 
+        Full HTML (for interactive charts, graphs, or widgets):
+        {
+          "title": "string",
+          "icon": "SF Symbol name",
+          "html": "<!doctype html>...full HTML with inline CSS/JS only..."
+        }
+
+        HTML rules:
+        - Inline CSS/JS only; no external scripts/styles/fonts/images.
+        - Use embedded SVG/Canvas for charts where needed.
+        - Keep layout responsive.
+
         ### COMPONENT SELECTION GUIDE
-        Choose components based on content type:
+        Choose components based on content type. Use HTML only when interactivity is essential:
         - **Product comparisons**: table + cardGrid + price callouts
         - **Travel planning**: cardGrid + map + numberedList for itinerary
         - **Research/study**: headers + paragraphs + bulletLists
@@ -522,6 +542,7 @@ class GeminiService: ObservableObject, AIServiceProtocol {
         encoder.outputFormatting = .prettyPrinted
         let currentJSON = try? encoder.encode(existingGenTab.components)
         let currentJSONString = currentJSON.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let currentHTML = existingGenTab.html ?? ""
 
         let modifyPrompt = """
         ### ROLE
@@ -536,12 +557,16 @@ class GeminiService: ObservableObject, AIServiceProtocol {
         Icon: \(existingGenTab.icon)
         Components:
         \(currentJSONString)
+        HTML:
+        \(currentHTML)
 
         ### USER INSTRUCTION
         "\(instruction)"
 
-        ### COMPONENT SCHEMA
-        Respond with JSON matching this exact structure:
+        ### RESPONSE FORMAT
+        Respond with JSON matching ONE of the following structures.
+
+        Component-based:
         {
           "title": "string (keep or modify based on instruction)",
           "icon": "SF Symbol name",
@@ -558,6 +583,17 @@ class GeminiService: ObservableObject, AIServiceProtocol {
             {"type": "link", "title": "Link Text", "url": "https://..."}
           ]
         }
+
+        Full HTML:
+        {
+          "title": "string",
+          "icon": "SF Symbol name",
+          "html": "<!doctype html>...full HTML with inline CSS/JS only..."
+        }
+
+        HTML rules:
+        - Inline CSS/JS only; no external scripts/styles/fonts/images.
+        - Use embedded SVG/Canvas for charts where needed.
 
         ### INSTRUCTIONS
         - Apply the user's modification to the existing GenTab

@@ -101,4 +101,15 @@ struct ReadingListItem: Identifiable, Codable, Equatable {
         self.readAt = nil
         self.addedAt = Date()
     }
+
+    // CloudKit sync initializer
+    init(id: UUID, url: String, title: String, excerpt: String?, isRead: Bool, addedAt: Date, readAt: Date?) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.excerpt = excerpt
+        self.isRead = isRead
+        self.addedAt = addedAt
+        self.readAt = readAt
+    }
 }

@@ -11,13 +11,19 @@ struct TabGroup: Identifiable, Codable, Equatable {
     var isCollapsed: Bool
     var createdAt: Date
 
+    // CloudKit sync support
+    var cloudKitRecordID: String?
+    var lastSyncedAt: Date?
+    var isSynced: Bool { cloudKitRecordID != nil }
+
     init(
         id: UUID = UUID(),
         name: String,
         icon: String = "folder.fill",
         colorName: String = "blue",
         tabIds: [UUID] = [],
-        isCollapsed: Bool = false
+        isCollapsed: Bool = false,
+        cloudKitRecordID: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -26,6 +32,8 @@ struct TabGroup: Identifiable, Codable, Equatable {
         self.tabIds = tabIds
         self.isCollapsed = isCollapsed
         self.createdAt = Date()
+        self.cloudKitRecordID = cloudKitRecordID
+        self.lastSyncedAt = nil
     }
 
     /// Get the SwiftUI Color from the stored color name

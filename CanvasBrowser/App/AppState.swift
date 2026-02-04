@@ -11,6 +11,7 @@ class AppState: ObservableObject {
     @Published var showTabGroupsSidebar: Bool = false
 
     private var cancellables = Set<AnyCancellable>()
+    private var genTabObserver: NSObjectProtocol?
 
     // We'll init the services here
     init() {
@@ -39,10 +40,20 @@ class AppState: ObservableObject {
                 self.tabGroupManager.cleanupGroups(existingTabIds: existingIds)
             }
             .store(in: &cancellables)
-        
-        NotificationCenter.default.addObserver(forName: .triggerDemoGenTab, object: nil, queue: .main) { [weak self] _ in
-            self?.createGenTabFromSelection()
+
+        genTabObserver = NotificationCenter.default.addObserver(forName: .triggerDemoGenTab, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.createGenTabFromSelection()
+            }
         }
+    }
+
+    deinit {
+        // Clean up notification observer
+        if let observer = genTabObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        cancellables.removeAll()
     }
     
     /// Create a GenTab from the current browsing context using AI

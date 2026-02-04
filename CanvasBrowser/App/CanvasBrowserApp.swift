@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct CanvasBrowserApp: App {
@@ -17,6 +18,18 @@ struct CanvasBrowserApp: App {
         }
     }
 
+    /// Update NSApp appearance to affect all windows including popovers
+    private func updateAppAppearance() {
+        switch theme {
+        case "Light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case "Dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        default:
+            NSApp.appearance = nil  // System default
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             MainWindowView()
@@ -27,6 +40,10 @@ struct CanvasBrowserApp: App {
                 .preferredColorScheme(colorScheme)
                 .onAppear {
                     appDelegate.setup(aiOrchestrator: appState.aiOrchestrator)
+                    updateAppAppearance()
+                }
+                .onChange(of: theme) { _, _ in
+                    updateAppAppearance()
                 }
                 .frame(minWidth: WindowManager.WindowSize.minWidth, minHeight: WindowManager.WindowSize.minHeight)
         }
@@ -40,6 +57,7 @@ struct CanvasBrowserApp: App {
         Settings {
             SettingsView()
                 .environmentObject(appState)
+                .preferredColorScheme(colorScheme)
         }
     }
 }

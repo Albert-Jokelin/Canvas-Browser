@@ -80,6 +80,21 @@ struct BookmarkNotificationModifier: ViewModifier {
     }
 }
 
+// MARK: - History Notification Handlers
+
+struct HistoryNotificationModifier: ViewModifier {
+    @Binding var showHistory: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: ShortcutManager.showHistoryNotification)) { _ in
+                withAnimation(.smooth(duration: 0.25)) {
+                    showHistory.toggle()
+                }
+            }
+    }
+}
+
 // MARK: - URL Tab Notification Handlers
 
 struct URLTabNotificationModifier: ViewModifier {
@@ -314,6 +329,10 @@ extension View {
 
     func bookmarkNotifications(showBookmarks: Binding<Bool>, toastManager: ToastManager) -> some View {
         modifier(BookmarkNotificationModifier(showBookmarks: showBookmarks, toastManager: toastManager))
+    }
+
+    func historyNotifications(showHistory: Binding<Bool>) -> some View {
+        modifier(HistoryNotificationModifier(showHistory: showHistory))
     }
 
     func urlTabNotifications() -> some View {

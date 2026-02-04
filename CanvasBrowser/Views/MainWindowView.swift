@@ -7,6 +7,7 @@ struct MainWindowView: View {
     @StateObject private var toastManager = ToastManager.shared
     @State private var showChat: Bool = false
     @State private var showBookmarks: Bool = false
+    @State private var showHistory: Bool = false
     @State private var showHelp: Bool = false
     @State private var showShelf: Bool = false
 
@@ -17,12 +18,14 @@ struct MainWindowView: View {
             .animation(.smooth(duration: 0.25), value: showChat)
             .animation(.smooth(duration: 0.25), value: appState.showTabGroupsSidebar)
             .animation(.smooth(duration: 0.25), value: showShelf)
+            .animation(.smooth(duration: 0.25), value: showHistory)
             .onAppear {
                 windowManager.register(windowCoordinator)
             }
             .toolbar { toolbarContent }
             .tabNotifications(showChat: $showChat)
             .bookmarkNotifications(showBookmarks: $showBookmarks, toastManager: toastManager)
+            .historyNotifications(showHistory: $showHistory)
             .urlTabNotifications()
             .widgetShelfNotifications(showShelf: $showShelf, toastManager: toastManager)
             .helpNotifications(showHelp: $showHelp)
@@ -59,6 +62,7 @@ struct MainWindowView: View {
             HStack(spacing: 0) {
                 chatPanel
                 bookmarksPanel
+                historyPanel
                 tabGroupsPanel
                 contentArea
             }
@@ -88,6 +92,20 @@ struct MainWindowView: View {
                     showBookmarks = false
                 },
                 onClose: { showBookmarks = false }
+            )
+            Divider()
+        }
+    }
+
+    @ViewBuilder
+    private var historyPanel: some View {
+        if showHistory {
+            HistoryView(
+                onOpenURL: { url in
+                    appState.sessionManager.addTab(url: url)
+                    showHistory = false
+                },
+                onClose: { showHistory = false }
             )
             Divider()
         }

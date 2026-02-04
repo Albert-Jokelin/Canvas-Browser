@@ -143,6 +143,16 @@ struct Bookmark: Identifiable, Codable, Equatable {
         self.favicon = favicon
         self.createdAt = Date()
     }
+
+    // CloudKit sync initializer
+    init(id: UUID, url: String, title: String, folderId: UUID?, favicon: String?, createdAt: Date) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.folderId = folderId
+        self.favicon = favicon
+        self.createdAt = createdAt
+    }
 }
 
 struct BookmarkFolder: Identifiable, Codable, Equatable {
@@ -156,5 +166,13 @@ struct BookmarkFolder: Identifiable, Codable, Equatable {
         self.name = name
         self.parentId = parentId
         self.createdAt = Date()
+    }
+
+    // CloudKit sync initializer
+    init(id: UUID, name: String, parentId: UUID?, createdAt: Date) {
+        self.id = id
+        self.name = name
+        self.parentId = parentId
+        self.createdAt = createdAt
     }
 }

@@ -40,5 +40,25 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Handoff Activity Types -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.canvas.browser.browsing</string>
+		<string>com.canvas.browser.gentab</string>
+		<string>com.canvas.browser.chat</string>
+		<string>com.canvas.browser.search</string>
+	</array>
+	<!-- Siri Integration -->
+	<key>NSSiriUsageDescription</key>
+	<string>Canvas Browser uses Siri to help you search, open pages, and interact with AI features using voice commands.</string>
+	<!-- Location for Proactive Suggestions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Canvas Browser uses your location to provide relevant suggestions and local search results.</string>
+	<!-- Calendar for Proactive Suggestions -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>Canvas Browser accesses your calendar to suggest relevant tabs based on upcoming events.</string>
+	<!-- Contacts for Autofill -->
+	<key>NSContactsUsageDescription</key>
+	<string>Canvas Browser uses your contacts to help autofill forms and share content.</string>
 </dict>
 </plist>

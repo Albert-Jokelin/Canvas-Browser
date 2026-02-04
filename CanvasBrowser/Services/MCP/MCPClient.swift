@@ -60,11 +60,128 @@ class MCPClient: ObservableObject {
 
     // MARK: - Connection Management
 
+    /// Validate server configuration before attempting connection
+    func validateConfig(_ config: MCPServerConfig) -> MCPConfigValidationResult {
+        switch config.transport {
+        case .stdio:
+            // Check command is not empty
+            guard !config.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .invalid("Command cannot be empty")
+            }
+
+            // Check if command is an absolute path
+            if config.command.hasPrefix("/") {
+                let fileManager = FileManager.default
+                if !fileManager.fileExists(atPath: config.command) {
+                    return .invalid("Executable not found at path: \(config.command)")
+                }
+                if !fileManager.isExecutableFile(atPath: config.command) {
+                    return .invalid("File is not executable: \(config.command)")
+                }
+            }
+        case .httpSSE, .webSocket:
+            guard let urlString = config.url?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !urlString.isEmpty else {
+                return .invalid("URL cannot be empty")
+            }
+            guard let url = URL(string: urlString), let scheme = url.scheme?.lowercased() else {
+                return .invalid("Invalid URL: \(urlString)")
+            }
+            if config.transport == .httpSSE && !(scheme == "http" || scheme == "https") {
+                return .invalid("HTTP SSE requires http/https URL")
+            }
+            if config.transport == .webSocket && !(scheme == "ws" || scheme == "wss") {
+                return .invalid("WebSocket requires ws/wss URL")
+            }
+        }
+
+        // Check name is not empty
+        guard !config.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .invalid("Server name cannot be empty")
+        }
+
+        return .valid
+    }
+
+    /// Test connection to a server without persisting
+    func testConnection(to config: MCPServerConfig) async -> MCPConnectionTestResult {
+        // Validate config first
+        let validation = validateConfig(config)
+        if case .invalid(let reason) = validation {
+            return .failed(reason)
+        }
+
+        let connection = MCPServerConnection(config: config)
+        do {
+            try await connection.connect()
+            let serverInfo = connection.serverInfo
+            let toolCount = connection.tools.count
+            let resourceCount = connection.resources.count
+            connection.disconnect()
+
+            let message = "Connected to \(serverInfo?.name ?? config.name)"
+            let details = "Tools: \(toolCount), Resources: \(resourceCount)"
+            return .success(message: message, details: details)
+        } catch {
+            return .failed(describeConnectionError(error, config: config))
+        }
+    }
+
+    /// Provide human-readable error descriptions
+    private func describeConnectionError(_ error: Error, config: MCPServerConfig) -> String {
+        if let mcpError = error as? MCPClientError {
+            return mcpError.errorDescription ?? error.localizedDescription
+        }
+
+        if let transportError = error as? MCPTransportError {
+            return transportError.errorDescription ?? error.localizedDescription
+        }
+
+        if let httpError = error as? MCPHTTPTransportError {
+            return httpError.errorDescription ?? error.localizedDescription
+        }
+
+        if let wsError = error as? MCPWebSocketTransportError {
+            return wsError.errorDescription ?? error.localizedDescription
+        }
+
+        let nsError = error as NSError
+
+        // Common error cases
+        if nsError.domain == NSPOSIXErrorDomain {
+            switch nsError.code {
+            case 2: // ENOENT
+                return "Command '\(config.command)' not found. Make sure it's installed and in your PATH."
+            case 13: // EACCES
+                return "Permission denied when running '\(config.command)'. Check file permissions."
+            default:
+                break
+            }
+        }
+
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == 4 {
+            return "Could not launch '\(config.command)'. Make sure the path is correct."
+        }
+
+        return "Connection failed: \(error.localizedDescription)"
+    }
+
     func connect(to config: MCPServerConfig) async throws {
         guard config.isEnabled else { return }
 
+        // Validate before connecting
+        let validation = validateConfig(config)
+        if case .invalid(let reason) = validation {
+            throw MCPClientError.configurationInvalid(reason)
+        }
+
         let connection = MCPServerConnection(config: config)
-        try await connection.connect()
+
+        do {
+            try await connection.connect()
+        } catch {
+            throw MCPClientError.connectionFailed(describeConnectionError(error, config: config))
+        }
 
         await MainActor.run {
             connectedServers[config.id] = connection
@@ -140,7 +257,7 @@ class MCPClient: ObservableObject {
 
 class MCPServerConnection: ObservableObject {
     let config: MCPServerConfig
-    private var transport: MCPStdioTransport?
+    private var transport: MCPTransport?
     private var requestId = 0
     private var pendingRequests: [Int: CheckedContinuation<JSONRPCResponse, Error>] = [:]
 
@@ -154,7 +271,15 @@ class MCPServerConnection: ObservableObject {
     }
 
     func connect() async throws {
-        let transport = MCPStdioTransport()
+        let transport: MCPTransport
+        switch config.transport {
+        case .stdio:
+            transport = MCPStdioTransport()
+        case .httpSSE:
+            transport = MCPHTTPTransport()
+        case .webSocket:
+            transport = MCPWebSocketTransport()
+        }
 
         transport.onMessage = { [weak self] data in
             self?.handleMessage(data)
@@ -170,7 +295,7 @@ class MCPServerConnection: ObservableObject {
             }
         }
 
-        try transport.start(command: config.command, args: config.args, env: config.env)
+        try transport.start(config: config)
         self.transport = transport
 
         // Initialize the connection
@@ -210,8 +335,28 @@ class MCPServerConnection: ObservableObject {
             }
         }
 
-        // Send initialized notification
-        _ = try await sendRequest(method: "notifications/initialized", params: nil as MCPInitializeParams?)
+        // Send initialized notification (no response expected)
+        sendNotification(method: "notifications/initialized")
+    }
+
+    /// Send a notification (no response expected)
+    private func sendNotification(method: String, params: [String: AnyCodable]? = nil) {
+        guard let transport = transport else { return }
+
+        struct JSONRPCNotification: Encodable {
+            let jsonrpc: String = "2.0"
+            let method: String
+            let params: [String: AnyCodable]?
+        }
+
+        let notification = JSONRPCNotification(method: method, params: params)
+
+        do {
+            let data = try JSONEncoder().encode(notification)
+            try transport.send(data)
+        } catch {
+            print("Failed to send MCP notification: \(error)")
+        }
     }
 
     private func refreshCapabilities() async {
@@ -329,6 +474,23 @@ class MCPServerConnection: ObservableObject {
     }
 }
 
+// MARK: - Validation Types
+
+enum MCPConfigValidationResult {
+    case valid
+    case invalid(String)
+}
+
+enum MCPConnectionTestResult {
+    case success(message: String, details: String)
+    case failed(String)
+
+    var isSuccess: Bool {
+        if case .success = self { return true }
+        return false
+    }
+}
+
 // MARK: - Errors
 
 enum MCPClientError: LocalizedError {
@@ -337,6 +499,8 @@ enum MCPClientError: LocalizedError {
     case resourceNotFound(String)
     case invalidResponse
     case timeout
+    case configurationInvalid(String)
+    case connectionFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -344,7 +508,9 @@ enum MCPClientError: LocalizedError {
         case .toolNotFound(let name): return "Tool '\(name)' not found"
         case .resourceNotFound(let uri): return "Resource '\(uri)' not found"
         case .invalidResponse: return "Invalid response from MCP server"
-        case .timeout: return "Request timed out"
+        case .timeout: return "Request timed out after 30 seconds"
+        case .configurationInvalid(let reason): return "Invalid configuration: \(reason)"
+        case .connectionFailed(let reason): return reason
         }
     }
 }

@@ -58,9 +58,13 @@ struct GenTabView: View {
             // Content
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Render each component dynamically
-                    ForEach(Array(genTab.components.enumerated()), id: \.offset) { index, component in
-                        GenTabComponentView(component: component)
+                    if let html = genTab.html, !html.isEmpty {
+                        GenTabHTMLView(html: html)
+                    } else {
+                        // Render each component dynamically
+                        ForEach(Array(genTab.components.enumerated()), id: \.offset) { index, component in
+                            GenTabComponentView(component: component)
+                        }
                     }
 
                     // Source attribution footer

@@ -1,7 +1,17 @@
 import Foundation
 
+protocol MCPTransport: AnyObject {
+    var onMessage: ((Data) -> Void)? { get set }
+    var onError: ((String) -> Void)? { get set }
+    var onClose: (() -> Void)? { get set }
+
+    func start(config: MCPServerConfig) throws
+    func send(_ data: Data) throws
+    func stop()
+}
+
 /// Transport layer for MCP communication over stdio
-class MCPStdioTransport: @unchecked Sendable {
+class MCPStdioTransport: @unchecked Sendable, MCPTransport {
     private var process: Process?
     private var stdin: FileHandle?
     private var stdout: FileHandle?
@@ -18,7 +28,11 @@ class MCPStdioTransport: @unchecked Sendable {
     init() {}
 
     /// Start the MCP server process
-    func start(command: String, args: [String], env: [String: String]? = nil) throws {
+    func start(config: MCPServerConfig) throws {
+        let command = config.command
+        let args = config.args
+        let env = config.env
+
         let process = Process()
 
         // Determine the executable path

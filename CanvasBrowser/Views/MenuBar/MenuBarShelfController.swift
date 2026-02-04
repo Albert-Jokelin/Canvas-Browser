@@ -8,21 +8,50 @@ class MenuBarShelfController: NSObject, ObservableObject {
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var isSetup = false
 
     @Published var shelfItems: [ShelfItem] = []
     @Published var isGlowing = false
     @Published var suggestedIntent: String?
 
+    /// Reference to AI orchestrator for AI features
+    weak var aiOrchestrator: AIOrchestrator?
+
+    /// Accessor for the status button (used by MenuBarController for consolidated menu)
+    var statusButton: NSStatusBarButton? {
+        statusItem?.button
+    }
+
     private var analysisTimer: Timer?
 
     override init() {
         super.init()
+        #if DEBUG
+        print("[MenuBarShelfController] Singleton initialized")
+        #endif
         loadShelfItems()
+    }
+
+    deinit {
+        cleanup()
     }
 
     // MARK: - Setup
 
     func setupMenuBar() {
+        // Guard against multiple setup calls
+        guard !isSetup else {
+            #if DEBUG
+            print("[MenuBarShelfController] setupMenuBar() called but already setup - ignoring")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("[MenuBarShelfController] Setting up menu bar")
+        #endif
+
+        isSetup = true
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
@@ -42,6 +71,22 @@ class MenuBarShelfController: NSObject, ObservableObject {
         )
 
         startAIMonitoring()
+    }
+
+    /// Clean up resources and remove menu bar item
+    func cleanup() {
+        #if DEBUG
+        print("[MenuBarShelfController] Cleaning up")
+        #endif
+
+        stopAIMonitoring()
+
+        if let statusItem = statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        statusItem = nil
+        popover = nil
+        isSetup = false
     }
 
     @objc func toggleShelf() {
