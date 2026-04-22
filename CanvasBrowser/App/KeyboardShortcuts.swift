@@ -265,6 +265,7 @@ class ShortcutManager: ObservableObject {
     static let showHelpNotification = Notification.Name("CanvasShowHelp")
     static let showKeyboardShortcutsNotification = Notification.Name("CanvasShowKeyboardShortcuts")
     static let viewSourceNotification = Notification.Name("CanvasViewSource")
+    static let toggleVoiceNotification = Notification.Name("CanvasToggleVoice")
 
     private init() {
         setupGlobalShortcuts()
@@ -281,13 +282,20 @@ class ShortcutManager: ObservableObject {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        guard event.modifierFlags.contains(.command) else { return false }
+        guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }
 
+        let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)
         let hasOption = event.modifierFlags.contains(.option)
         let hasControl = event.modifierFlags.contains(.control)
 
-        guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        // Handle Option+V for voice toggle (no Cmd required)
+        if chars == "v" && hasOption && !hasCommand && !hasShift && !hasControl {
+            NotificationCenter.default.post(name: .toggleVoiceControl, object: nil)
+            return true
+        }
+
+        guard hasCommand else { return false }
 
         // Handle Cmd+Shift+K for AI toggle
         if chars == "k" && hasShift && !hasOption && !hasControl {

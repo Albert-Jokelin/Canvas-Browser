@@ -60,5 +60,10 @@
 	<!-- Contacts for Autofill -->
 	<key>NSContactsUsageDescription</key>
 	<string>Canvas Browser uses your contacts to help autofill forms and share content.</string>
+	<!-- Voice Control -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Canvas Browser uses the microphone for voice commands to control browsing hands-free.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Canvas Browser uses speech recognition to understand voice commands.</string>
 </dict>
 </plist>

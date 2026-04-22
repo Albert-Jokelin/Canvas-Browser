@@ -61,33 +61,25 @@ class CloudDeploymentManager: ObservableObject {
             }
         }
 
-        // Serialize GenTab to JSON
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
-        let genTabData = try encoder.encode(genTab)
+        guard GCSUploader.isConfigured else {
+            throw GCSError.missingCredentials
+        }
 
-        // Generate a short code for the share URL
         let shortCode = generateShortCode()
+        let html = generateShareableHTML(for: genTab)
+        let htmlData = Data(html.utf8)
 
-        // In a real implementation, you would upload to your cloud backend
-        // For now, we'll use a local data URL as a placeholder
-        // This would be replaced with actual API call like:
-        // let uploadURL = URL(string: "https://api.canvasbrowser.app/gentabs/deploy")!
-
-        // Create a base64 encoded data URL for demonstration
-        let base64Data = genTabData.base64EncodedString()
-        let shareURL = URL(string: "canvas://gentab/\(shortCode)")!
-
-        // Store the GenTab data locally (in production, this would be on server)
-        storeGenTabData(shortCode: shortCode, data: genTabData)
-
-        let expiresAt = expiresIn.map { Date().addingTimeInterval($0) }
+        let publicURL = try await GCSUploader.upload(
+            data: htmlData,
+            objectKey: "\(shortCode).html",
+            contentType: "text/html; charset=utf-8"
+        )
 
         let deployed = DeployedGenTab(
             genTab: genTab,
-            shareURL: shareURL,
+            shareURL: publicURL,
             shortCode: shortCode,
-            expiresAt: expiresAt
+            expiresAt: nil
         )
 
         await MainActor.run {
@@ -285,24 +277,14 @@ class CloudDeploymentManager: ObservableObject {
         return deployedGenTabs.first { $0.shortCode == shortCode && !$0.isExpired }
     }
 
-    /// Load the original GenTab data from a short code
-    func loadGenTabData(shortCode: String) -> GenTab? {
-        guard let data = retrieveGenTabData(shortCode: shortCode) else { return nil }
-
-        do {
-            return try JSONDecoder().decode(GenTab.self, from: data)
-        } catch {
-            print("Failed to decode GenTab: \(error)")
-            return nil
-        }
-    }
-
     // MARK: - Management
 
     func deleteDeployment(_ deployment: DeployedGenTab) {
         deployedGenTabs.removeAll { $0.id == deployment.id }
-        removeGenTabData(shortCode: deployment.shortCode)
         saveDeployedGenTabs()
+        Task {
+            try? await GCSUploader.delete(objectKey: "\(deployment.shortCode).html")
+        }
     }
 
     func incrementViewCount(shortCode: String) {
@@ -317,20 +299,6 @@ class CloudDeploymentManager: ObservableObject {
     private func generateShortCode() -> String {
         let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<8).map { _ in characters.randomElement()! })
-    }
-
-    // MARK: - Local Storage (would be cloud in production)
-
-    private func storeGenTabData(shortCode: String, data: Data) {
-        UserDefaults.standard.set(data, forKey: "gentab_\(shortCode)")
-    }
-
-    private func retrieveGenTabData(shortCode: String) -> Data? {
-        UserDefaults.standard.data(forKey: "gentab_\(shortCode)")
-    }
-
-    private func removeGenTabData(shortCode: String) {
-        UserDefaults.standard.removeObject(forKey: "gentab_\(shortCode)")
     }
 
     // MARK: - Persistence
@@ -359,26 +327,7 @@ struct ShareGenTabSheet: View {
 
     @State private var shareURL: URL?
     @State private var isDeploying = false
-    @State private var expirationOption: ExpirationOption = .never
     @State private var showCopiedConfirmation = false
-
-    enum ExpirationOption: String, CaseIterable {
-        case oneHour = "1 hour"
-        case oneDay = "24 hours"
-        case oneWeek = "7 days"
-        case oneMonth = "30 days"
-        case never = "Never"
-
-        var timeInterval: TimeInterval? {
-            switch self {
-            case .oneHour: return 3600
-            case .oneDay: return 86400
-            case .oneWeek: return 604800
-            case .oneMonth: return 2592000
-            case .never: return nil
-            }
-        }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -400,7 +349,22 @@ struct ShareGenTabSheet: View {
 
             Divider()
 
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
+                // GCS not-configured warning
+                if !GCSUploader.isConfigured {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("Configure Cloud Storage in Settings first.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+                }
+
                 // GenTab preview
                 HStack {
                     Image(systemName: genTab.icon)
@@ -423,14 +387,6 @@ struct ShareGenTabSheet: View {
                 .padding()
                 .background(Color(NSColor.controlBackgroundColor))
                 .cornerRadius(12)
-
-                // Expiration
-                Picker("Link expires", selection: $expirationOption) {
-                    ForEach(ExpirationOption.allCases, id: \.self) { option in
-                        Text(option.rawValue).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
 
                 // Deploy button or share URL
                 if let url = shareURL {
@@ -457,6 +413,13 @@ struct ShareGenTabSheet: View {
                             }
                             .buttonStyle(.bordered)
 
+                            Button {
+                                NSWorkspace.shared.open(url)
+                            } label: {
+                                Label("Open in Browser", systemImage: "safari")
+                            }
+                            .buttonStyle(.bordered)
+
                             Button(action: shareViaSystem) {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
@@ -473,7 +436,7 @@ struct ShareGenTabSheet: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isDeploying)
+                    .disabled(isDeploying || !GCSUploader.isConfigured)
                 }
 
                 if let error = deploymentManager.deploymentError {
@@ -486,7 +449,7 @@ struct ShareGenTabSheet: View {
 
             Spacer()
         }
-        .frame(width: 400, height: 350)
+        .frame(width: 420, height: 360)
     }
 
     func deployGenTab() {
@@ -494,10 +457,7 @@ struct ShareGenTabSheet: View {
 
         Task {
             do {
-                let deployed = try await deploymentManager.deployToCloud(
-                    genTab,
-                    expiresIn: expirationOption.timeInterval
-                )
+                let deployed = try await deploymentManager.deployToCloud(genTab)
 
                 await MainActor.run {
                     shareURL = deployed.shareURL

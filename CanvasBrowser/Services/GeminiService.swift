@@ -190,6 +190,80 @@ class GeminiService: ObservableObject, AIServiceProtocol {
         return "No response generated."
     }
 
+    /// Generate a response with full conversation history for multi-turn context
+    func generateConversationResponse(history: [(role: String, content: String)], model: String? = nil) async throws -> String {
+        guard !apiKey.isEmpty else { throw GeminiError.missingAPIKey }
+
+        let modelToUse = model ?? selectedModel
+
+        var components = URLComponents(string: "https://generativelanguage.googleapis.com/v1beta/models/\(modelToUse):generateContent")
+        components?.queryItems = [
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+
+        guard let url = components?.url else { throw GeminiError.invalidURL }
+
+        // Merge consecutive same-role messages (Gemini requires strict alternation)
+        var merged: [(role: String, content: String)] = []
+        for turn in history {
+            if let last = merged.last, last.role == turn.role {
+                merged[merged.count - 1].content += "\n" + turn.content
+            } else {
+                merged.append(turn)
+            }
+        }
+
+        // Gemini requires conversation to start with "user" role
+        if let first = merged.first, first.role != "user" {
+            merged.removeFirst()
+        }
+
+        let contents = merged.map { turn -> [String: Any] in
+            [
+                "role": turn.role,
+                "parts": [["text": turn.content]]
+            ]
+        }
+
+        let body: [String: Any] = [
+            "contents": contents
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, httpResponse) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = httpResponse as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown Error"
+            print("Gemini API Error: \(errorText)")
+            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = errorData["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                throw GeminiError.apiError(message)
+            }
+            throw GeminiError.apiError(errorText)
+        }
+
+        struct GenerateContentResponse: Codable {
+            struct Candidate: Codable {
+                struct Content: Codable {
+                    struct Part: Codable {
+                        let text: String
+                    }
+                    let parts: [Part]
+                }
+                let content: Content
+            }
+            let candidates: [Candidate]?
+        }
+
+        let apiResponse = try JSONDecoder().decode(GenerateContentResponse.self, from: data)
+        return apiResponse.candidates?.first?.content.parts.first?.text ?? "No response generated."
+    }
+
     /// Protocol conformance - simple version that delegates to full version
     func generateResponse(prompt: String) async throws -> String {
         try await generateResponse(prompt: prompt, model: nil)

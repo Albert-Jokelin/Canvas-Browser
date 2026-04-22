@@ -135,6 +135,37 @@ struct ChatPanelView: View {
             .background(Color(NSColor.controlBackgroundColor))
         }
         .background(Color(NSColor.windowBackgroundColor))
+        .onReceive(NotificationCenter.default.publisher(for: .voiceAIQuery)) { notification in
+            if let query = notification.userInfo?["query"] as? String {
+                injectVoiceQuery(query)
+            }
+        }
+    }
+
+    private func injectVoiceQuery(_ query: String) {
+        let userMsg = ChatMessage(role: .user, content: query)
+        messages.append(userMsg)
+        isLoading = true
+
+        Task {
+            do {
+                if geminiService.apiKey.isEmpty {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    messages.append(ChatMessage(role: .assistant, content: "Please set your Gemini API Key in Settings to chat with me."))
+                } else {
+                    var history: [(role: String, content: String)] = []
+                    for msg in messages {
+                        let role = msg.role == .user ? "user" : "model"
+                        history.append((role: role, content: msg.content))
+                    }
+                    let response = try await geminiService.generateConversationResponse(history: history, model: aiModel)
+                    messages.append(ChatMessage(role: .assistant, content: response))
+                }
+            } catch {
+                messages.append(ChatMessage(role: .assistant, content: "Error: \(error.localizedDescription)"))
+            }
+            isLoading = false
+        }
     }
 
     private func sendMessage() {
@@ -157,7 +188,7 @@ struct ChatPanelView: View {
 
                         messages.append(ChatMessage(role: .assistant, content: "Sure, I'm analyzing your request to build a GenTab..."))
 
-                        let genTab = try await geminiService.buildGenTab(for: text)
+                        let genTab = try await buildContextAwareGenTab(for: text)
 
                         await MainActor.run {
                             appState.sessionManager.addGenTab(genTab)
@@ -166,12 +197,21 @@ struct ChatPanelView: View {
                         messages.append(ChatMessage(role: .assistant, content: "Done! I've created the '\(genTab.title)' GenTab for you."))
 
                     } else {
-                        var finalPrompt = text
-                        if let currentTab = appState.sessionManager.currentTab, case .web(let webTab) = currentTab {
-                            finalPrompt = "Current Context: \(webTab.title) (\(webTab.url.absoluteString))\n\nUser Query: \(text)"
+                        // Build conversation history for multi-turn context
+                        var history: [(role: String, content: String)] = []
+                        for msg in messages {
+                            let role = msg.role == .user ? "user" : "model"
+                            history.append((role: role, content: msg.content))
                         }
 
-                        let response = try await geminiService.generateResponse(prompt: finalPrompt, model: aiModel)
+                        // Enrich the latest user message with current page context
+                        if let currentTab = appState.sessionManager.currentTab, case .web(let webTab) = currentTab {
+                            if let lastIndex = history.indices.last, history[lastIndex].role == "user" {
+                                history[lastIndex].content = "Current Context: \(webTab.title) (\(webTab.url.absoluteString))\n\nUser Query: \(history[lastIndex].content)"
+                            }
+                        }
+
+                        let response = try await geminiService.generateConversationResponse(history: history, model: aiModel)
                         messages.append(ChatMessage(role: .assistant, content: response))
                     }
                 }
@@ -180,6 +220,51 @@ struct ChatPanelView: View {
             }
             isLoading = false
         }
+    }
+
+    private func buildContextAwareGenTab(for userText: String) async throws -> GenTab {
+        guard let currentTab = appState.sessionManager.currentTab,
+              case .web(let webTab) = currentTab,
+              let webView = appState.sessionManager.webViewCache[webTab.id] else {
+            return try await geminiService.buildGenTab(for: userText)
+        }
+
+        let contentExtractor = ContentExtractor.shared
+        let selection = await contentExtractor.extractSelection(from: webView)
+        let extracted = await contentExtractor.extractContent(from: webView, tabId: webTab.id)
+
+        var contextParts: [String] = []
+        if let selection = selection {
+            contextParts.append("Selected Text:\n\(selection)")
+        }
+
+        var sources: [SourceAttribution] = []
+        if let extracted = extracted {
+            contextParts.append("Page Title: \(extracted.title)")
+            contextParts.append("Page URL: \(extracted.url)")
+            if let description = extracted.metaDescription, !description.isEmpty {
+                contextParts.append("Summary: \(description)")
+            } else if !extracted.textContent.isEmpty {
+                let summary = String(extracted.textContent.prefix(800))
+                contextParts.append("Summary: \(summary)")
+            }
+            sources.append(SourceAttribution(url: extracted.url, title: extracted.title, domain: extracted.domain))
+        } else {
+            contextParts.append("Page Title: \(webTab.title)")
+            contextParts.append("Page URL: \(webTab.url.absoluteString)")
+            sources.append(SourceAttribution(url: webTab.url.absoluteString, title: webTab.title, domain: webTab.url.host ?? webTab.url.absoluteString))
+        }
+
+        let contextBlock = contextParts.joined(separator: "\n")
+        let finalPrompt = """
+        Create a GenTab using the context below.
+
+        \(contextBlock)
+
+        User Request: "\(userText)"
+        """
+
+        return try await geminiService.buildGenTab(for: finalPrompt, sourceURLs: sources)
     }
 }
 

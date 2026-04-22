@@ -18,6 +18,11 @@ struct SettingsView: View {
                     Label("AI Features", systemImage: "brain")
                 }
 
+            VoiceSettingsView()
+                .tabItem {
+                    Label("Voice", systemImage: "mic")
+                }
+
             MCPSettingsView()
                 .tabItem {
                     Label("MCP", systemImage: "cpu")
@@ -51,6 +56,11 @@ struct SettingsView: View {
             ShortcutsSettingsView()
                 .tabItem {
                     Label("Shortcuts", systemImage: "command")
+                }
+
+            GCSSettingsView()
+                .tabItem {
+                    Label("Cloud Storage", systemImage: "icloud.and.arrow.up")
                 }
         }
         .padding()
@@ -555,5 +565,122 @@ struct FocusSettingsView: View {
         config.customBlockedDomains.removeAll { $0 == domain }
         focusManager.applyConfiguration(config)
         customDomainsText = config.customBlockedDomains.joined(separator: ", ")
+    }
+}
+
+// MARK: - Cloud Storage (GCS) Settings
+
+struct GCSSettingsView: View {
+    @AppStorage("gcsBucketName") private var bucketName = ""
+    @State private var accessKeyID: String = ""
+    @State private var secretKey: String = ""
+
+    @State private var testResult: String?
+    @State private var testIsError = false
+    @State private var isTesting = false
+
+    var body: some View {
+        Form {
+            Section("Google Cloud Storage") {
+                TextField("Bucket Name", text: $bucketName)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    TextField("Access Key ID (GOOGL...)", text: $accessKeyID)
+                        .textFieldStyle(.roundedBorder)
+
+                    if !accessKeyID.isEmpty {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                }
+
+                HStack {
+                    SecureField("HMAC Secret", text: $secretKey)
+                        .textFieldStyle(.roundedBorder)
+
+                    if !secretKey.isEmpty {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                }
+
+                Link("Open GCP Interoperability Console",
+                     destination: URL(string: "https://console.cloud.google.com/storage/settings;tab=interoperability")!)
+                    .font(.caption)
+            }
+
+            Section("Test Connection") {
+                Button(action: runTest) {
+                    if isTesting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Upload Test File", systemImage: "arrow.up.to.line")
+                    }
+                }
+                .disabled(isTesting || bucketName.isEmpty || accessKeyID.isEmpty || secretKey.isEmpty)
+
+                if let result = testResult {
+                    Text(result)
+                        .font(.caption)
+                        .foregroundColor(testIsError ? .red : .green)
+                }
+            }
+
+            Section {
+                Text("""
+                    Setup steps:
+                    1. Create a GCS bucket (uniform access control)
+                    2. Grant "Storage Object Viewer" to allUsers for public read
+                    3. Go to Cloud Storage > Settings > Interoperability
+                    4. Create an HMAC key and paste the ID + Secret above
+                    """)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            accessKeyID = UserDefaults.standard.string(forKey: "gcsAccessKeyID") ?? ""
+            secretKey = UserDefaults.standard.string(forKey: "gcsSecretKey") ?? ""
+        }
+        .onChange(of: accessKeyID) { _, newValue in
+            let v = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            UserDefaults.standard.set(v.isEmpty ? nil : v, forKey: "gcsAccessKeyID")
+        }
+        .onChange(of: secretKey) { _, newValue in
+            let v = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            UserDefaults.standard.set(v.isEmpty ? nil : v, forKey: "gcsSecretKey")
+        }
+        .onChange(of: bucketName) { _, newValue in
+            let v = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if v != newValue { bucketName = v }
+        }
+    }
+
+    private func runTest() {
+        isTesting = true
+        testResult = nil
+        Task {
+            do {
+                let testData = Data("Canvas Browser GCS test".utf8)
+                let url = try await GCSUploader.upload(
+                    data: testData,
+                    objectKey: "canvas-test.txt",
+                    contentType: "text/plain"
+                )
+                await MainActor.run {
+                    testResult = "Success: \(url.absoluteString)"
+                    testIsError = false
+                    isTesting = false
+                }
+            } catch {
+                await MainActor.run {
+                    testResult = error.localizedDescription
+                    testIsError = true
+                    isTesting = false
+                }
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@ class AppState: ObservableObject {
     @Published var sessionManager: BrowsingSession
     @Published var aiOrchestrator: AIOrchestrator
     @Published var tabGroupManager: TabGroupManager
+    @Published var voiceControlService: VoiceControlService
 
     /// Whether the tab groups sidebar is visible
     @Published var showTabGroupsSidebar: Bool = false
@@ -22,9 +23,13 @@ class AppState: ObservableObject {
         self.sessionManager = BrowsingSession()
         self.aiOrchestrator = AIOrchestrator(geminiService: geminiService, historyManager: historyManager)
         self.tabGroupManager = TabGroupManager()
+        self.voiceControlService = VoiceControlService()
 
         // Wire up session manager for content extraction
         self.aiOrchestrator.sessionManager = self.sessionManager
+
+        // Wire up voice control dispatcher
+        self.voiceControlService.dispatcher.appState = self
 
         // Propagate session changes to AppState consumers
         sessionManager.objectWillChange

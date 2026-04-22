@@ -53,4 +53,15 @@ extension Notification.Name {
 
     /// Posted when AI suggestion was dismissed
     static let aiSuggestionDismissed = Notification.Name("aiSuggestionDismissed")
+
+    // MARK: - Voice Control Notifications
+
+    /// Posted when a voice command wants to send a query to AI chat
+    static let voiceAIQuery = Notification.Name("voiceAIQuery")
+
+    /// Posted when a voice command wants to create a GenTab
+    static let voiceGenTabRequest = Notification.Name("voiceGenTabRequest")
+
+    /// Posted to toggle voice listening on/off
+    static let toggleVoiceControl = Notification.Name("toggleVoiceControl")
 }

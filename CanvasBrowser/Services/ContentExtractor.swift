@@ -71,6 +71,16 @@ class ContentExtractor: ObservableObject {
     })();
     """
 
+    /// JavaScript to extract selected text
+    private let selectionScript = """
+    (function() {
+        if (window.getSelection) {
+            return window.getSelection().toString();
+        }
+        return "";
+    })();
+    """
+
     /// Extract content from a single WebView
     func extractContent(from webView: WKWebView, tabId: UUID) async -> ExtractedContent? {
         return await withCheckedContinuation { continuation in
@@ -108,6 +118,24 @@ class ContentExtractor: ObservableObject {
 
                     print("Extracted content from: \(content.domain) - \(content.title)")
                     continuation.resume(returning: content)
+                }
+            }
+        }
+    }
+
+    /// Extract selected text from a WebView
+    func extractSelection(from webView: WKWebView) async -> String? {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                webView.evaluateJavaScript(self.selectionScript) { result, error in
+                    if let error = error {
+                        print("Selection extraction error: \(error.localizedDescription)")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    let selection = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    continuation.resume(returning: selection.isEmpty ? nil : selection)
                 }
             }
         }

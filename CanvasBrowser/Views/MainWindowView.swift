@@ -29,6 +29,9 @@ struct MainWindowView: View {
             .urlTabNotifications()
             .widgetShelfNotifications(showShelf: $showShelf, toastManager: toastManager)
             .helpNotifications(showHelp: $showHelp)
+            .onReceive(NotificationCenter.default.publisher(for: .toggleVoiceControl)) { _ in
+                appState.voiceControlService.toggleListening()
+            }
             .sheet(isPresented: $showHelp) {
                 HelpView()
             }
@@ -133,6 +136,11 @@ struct MainWindowView: View {
             tabContent
             suggestionBanner
         }
+        .overlay(alignment: .bottom) {
+            if appState.voiceControlService.showTranscriptionOverlay {
+                VoiceTranscriptionOverlay(voiceService: appState.voiceControlService)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -212,6 +220,8 @@ struct MainWindowView: View {
                     .foregroundColor(showShelf ? .accentColor : .secondary)
             }
             .help("Toggle Shelf (⌘⇧S)")
+
+            VoiceControlButton(voiceService: appState.voiceControlService)
         }
     }
 }
